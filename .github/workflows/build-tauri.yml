@@ -1,4 +1,4 @@
-name: Build & Release Tauri App
+name: Build Tauri App
 
 on:
   push:
@@ -9,10 +9,13 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
+            target: windows
           - os: macos-latest
+            target: macos
 
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +28,15 @@ jobs:
           cache: pnpm
 
       - run: pnpm install
+
+      # ✅ 关键：构建前端
       - run: pnpm build
+
+      # ✅ 再打包 tauri
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "App ${{ github.ref_name }}"
-          releaseBody: "Auto release"
-          releaseDraft: false
-          prerelease: false
