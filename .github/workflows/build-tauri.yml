@@ -33,10 +33,14 @@ jobs:
       - run: pnpm build
 
       # ✅ 再打包 tauri
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build & Release Tauri App
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: "App v__VERSION__"
+          releaseBody: "自动构建版本（CI Generated）"
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true   # ✅ 支持自动更新
