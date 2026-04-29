@@ -34,6 +34,7 @@
     "vite-plugin-solid": "2.11.12",
     "vite-tsconfig-paths": "5.1.4"
   },
+  "packageManager": "pnpm@9.0.0",
   "dependencies": {
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/cli": "2.10.1",
