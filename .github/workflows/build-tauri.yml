@@ -1,28 +1,26 @@
-name: Build Tauri App
+name: Build & Release Tauri App
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux
           - os: windows-latest
-            target: windows
           - os: macos-latest
-            target: macos
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
@@ -30,21 +28,14 @@ jobs:
           cache: pnpm
 
       - run: pnpm install
-
-      # ✅ 关键：构建前端
       - run: pnpm build
 
-      # ✅ 再打包 tauri
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Linux deps
-        if: matrix.target == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "App ${{ github.ref_name }}"
+          releaseBody: "Auto release"
+          releaseDraft: false
+          prerelease: false
