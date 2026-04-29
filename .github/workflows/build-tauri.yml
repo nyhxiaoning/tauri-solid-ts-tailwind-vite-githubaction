@@ -34,6 +34,11 @@ jobs:
       # ✅ 关键：构建前端
       - run: pnpm build
 
+      # ✅ 再打包 tauri
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install Linux deps
         if: matrix.target == 'linux'
         run: |
