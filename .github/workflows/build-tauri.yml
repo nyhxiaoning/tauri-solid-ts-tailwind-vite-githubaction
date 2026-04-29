@@ -2,29 +2,16 @@ name: Build Tauri App
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "src-tauri/**"
-      - ".github/workflows/build-tauri.yml"
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pull-requests: read
-
-concurrency:
-  group: tauri-build
-  cancel-in-progress: false
+    branches: [main]
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
-        include
+        include:
           - os: ubuntu-latest
             target: linux
           - os: windows-latest
@@ -33,36 +20,26 @@ jobs:
             target: macos
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
+      - uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install
 
-      - name: Install Tauri dependencies (Linux only)
+      # ✅ 关键：构建前端
+      - run: pnpm build
+
+      - name: Install Linux deps
         if: matrix.target == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev \
-            libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --bundle
