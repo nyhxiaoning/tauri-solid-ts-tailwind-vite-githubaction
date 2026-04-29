@@ -2,8 +2,7 @@ name: Build & Release Tauri App
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 jobs:
   build:
