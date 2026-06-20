@@ -1,16 +1,17 @@
-import Footer from '@components/Footer'
-import Header from '@components/Header'
-import Main from '@components/Main'
-import type { Component } from 'solid-js'
+import { Show } from 'solid-js'
+import { I18nProvider } from './i18n'
+import { gameStore } from './stores/gameStore'
+import { Menu } from './game/Menu'
+import { GameCanvas } from './game/GameCanvas'
 
-const App: Component = () => {
+export default function App() {
+  const isPlaying = () => gameStore.phase() !== 'menu'
+
   return (
-    <div class="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-      <Header />
-      <Main />
-      <Footer />
-    </div>
+    <I18nProvider>
+      <Show when={isPlaying()} fallback={<Menu />}>
+        <GameCanvas />
+      </Show>
+    </I18nProvider>
   )
 }
-
-export default App
