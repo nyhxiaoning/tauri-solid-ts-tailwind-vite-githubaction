@@ -26,6 +26,17 @@ serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive"] }
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-devtools = "2.1.0"
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+mdns-sd = "0.13"
+local-ip-address = "0.6"
+uuid = { version = "1", features = ["v4"] }
+futures-util = "0.3"
+mime_guess = "2"
+tokio-util = { version = "0.7", features = ["io"] }
+hostname = "0.4"
+tracing = "0.1"
+tauri-plugin-dialog = "2"
 
 [features]
 default = [ "custom-protocol" ]
