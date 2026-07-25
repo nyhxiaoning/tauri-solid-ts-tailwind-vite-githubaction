@@ -28,9 +28,9 @@ impl MdnsManager {
         let properties = [("file_count", &file_count_str[..]), ("version", "1")];
 
         let service_info = ServiceInfo::new(
-            "_lanshare._tcp",
+            "_lanshare._tcp.local.",
             device_name,
-            &format!("{}._lanshare._tcp.local.", device_name),
+            &format!("{}.local.", device_name),
             ip,
             port,
             &properties[..],
@@ -45,7 +45,7 @@ impl MdnsManager {
     }
 
     pub fn unregister_service(&self, device_name: &str) {
-        let service_name = format!("{}.{}._lanshare._tcp.local.", device_name, device_name);
+        let service_name = format!("{}._lanshare._tcp.local.", device_name);
         let _ = self.daemon.unregister(&service_name);
     }
 
@@ -56,7 +56,7 @@ impl MdnsManager {
 
         let receiver = self
             .daemon
-            .browse("_lanshare._tcp")
+            .browse("_lanshare._tcp.local.")
             .map_err(|e| format!("Failed to start mDNS browsing: {}", e))?;
 
         self.browsing.store(true, Ordering::SeqCst);
@@ -78,11 +78,17 @@ impl MdnsManager {
             }
         });
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             while let Some(event) = rx.recv().await {
                 match event {
                     ServiceEvent::ServiceResolved(info) => {
-                        let device_name = info.get_fullname().to_string();
+                        let fullname = info.get_fullname();
+                        // Extract instance name from fullname (format: "instance._service._tcp.local.")
+                        let ty_domain = info.get_type();
+                        let instance_name = fullname
+                            .strip_suffix(&format!(".{}", ty_domain))
+                            .unwrap_or(fullname)
+                            .to_string();
                         let ip = info
                             .get_addresses()
                             .iter()
@@ -99,7 +105,7 @@ impl MdnsManager {
                         let _ = app_handle.emit(
                             "mdns-device-up",
                             serde_json::json!({
-                                "device_name": device_name,
+                                "device_name": instance_name,
                                 "ip": ip,
                                 "port": port,
                                 "file_count": file_count,
