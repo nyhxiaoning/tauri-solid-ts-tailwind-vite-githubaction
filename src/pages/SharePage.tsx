@@ -109,7 +109,12 @@ const SharePage: Component = () => {
     // Then invoke the backend
     for (const path of paths) {
       try {
-        await invoke<FileEntry>('add_file', { path })
+        // On Android, content:// URIs need to be copied to cache first
+        let resolvedPath = path
+        if (path.startsWith('content://')) {
+          resolvedPath = await invoke<string>('resolve_file_path', { path })
+        }
+        await invoke<FileEntry>('add_file', { path: resolvedPath })
       } catch (e) {
         console.error(`Failed to add file ${path}:`, e)
       }

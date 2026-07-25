@@ -78,6 +78,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-devtools",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-shell",
  "tokio",
  "tokio-util",

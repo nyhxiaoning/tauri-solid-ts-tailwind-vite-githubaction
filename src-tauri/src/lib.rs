@@ -10,6 +10,8 @@ use server::ServerHandle;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
+use std::str::FromStr;
+use tauri_plugin_fs::FsExt;
 
 pub struct AppState {
     pub file_manager: Arc<Mutex<FileManager>>,
@@ -34,6 +36,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let mdns_manager =
                 MdnsManager::new().expect("Failed to initialize mDNS manager");
@@ -67,6 +70,7 @@ pub fn run() {
             stop_server,
             get_network_info,
             get_server_status,
+            resolve_file_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -246,4 +250,38 @@ async fn get_server_status(
         "running": is_running,
         "file_count": file_count,
     }))
+}
+
+#[tauri::command]
+async fn resolve_file_path(
+    path: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    if !path.starts_with("content://") {
+        return Ok(path);
+    }
+
+    let cache_dir = app_handle
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+
+    let file_name = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string();
+
+    let dest_path = cache_dir.join(file_name);
+    let dest_path_str = dest_path.to_str().ok_or("Invalid cache path")?.to_string();
+
+    let content = app_handle
+        .fs()
+        .read(tauri_plugin_fs::FilePath::from_str(&path).unwrap())
+        .map_err(|e| format!("Failed to read content URI: {}", e))?;
+
+    std::fs::write(&dest_path, &content)
+        .map_err(|e| format!("Failed to write file to cache: {}", e))?;
+
+    Ok(dest_path_str)
 }
