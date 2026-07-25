@@ -37,6 +37,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 hostname = "0.4"
 tracing = "0.1"
 tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
 
 [features]
 default = [ "custom-protocol" ]

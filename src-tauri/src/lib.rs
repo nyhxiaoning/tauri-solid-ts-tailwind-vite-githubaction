@@ -21,6 +21,7 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     // Enable the Tauri devtools plugin in development builds
@@ -32,6 +33,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let mdns_manager =
                 MdnsManager::new().expect("Failed to initialize mDNS manager");

@@ -142,3 +142,16 @@ dist
 
 # SvelteKit build / generate output
 .svelte-kit
+
+### Android ###
+# Gradle build outputs
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/buildSrc/build/
+src-tauri/gen/android/buildSrc/.gradle/
+src-tauri/gen/android/buildSrc/.kotlin/
+src-tauri/gen/android/local.properties
+*.apk
+*.aab
+keystore.properties

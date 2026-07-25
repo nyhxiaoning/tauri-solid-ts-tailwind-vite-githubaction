@@ -2,15 +2,16 @@ import { createSignal, type Component } from 'solid-js'
 import Footer from '@components/Footer'
 import Header from '@components/Header'
 import Main from '@components/Main'
+import QuickLinks from '@components/QuickLinks'
 import SharePage from './pages/SharePage'
 
 const App: Component = () => {
-  const [tab, setTab] = createSignal<'home' | 'share'>('home')
+  const [tab, setTab] = createSignal<'home' | 'share'>('share')
 
   return (
     <div class="min-h-screen flex flex-col bg-gray-100">
       {/* Navigation */}
-      <nav class="bg-white shadow-sm border-b border-gray-200">
+      <nav class="bg-white shadow-sm border-b border-gray-200 pt-[10vh]">
         <div class="max-w-2xl mx-auto px-4 flex items-center h-12 gap-1">
           <button
             onClick={() => setTab('home')}
@@ -41,6 +42,7 @@ const App: Component = () => {
           <div class="min-h-screen flex flex-col items-center justify-center bg-gray-100">
             <Header />
             <Main />
+            <QuickLinks />
             <Footer />
           </div>
         ) : (
