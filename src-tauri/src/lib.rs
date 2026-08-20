@@ -272,16 +272,43 @@ async fn resolve_file_path(
         .unwrap_or("file")
         .to_string();
 
-    let dest_path = cache_dir.join(file_name);
-    let dest_path_str = dest_path.to_str().ok_or("Invalid cache path")?.to_string();
-
     let content = app_handle
         .fs()
         .read(tauri_plugin_fs::FilePath::from_str(&path).unwrap())
         .map_err(|e| format!("Failed to read content URI: {}", e))?;
 
+    // Preserve the original extension: content:// URIs often expose only an
+    // opaque id (e.g. "1234") as the file name, dropping the real extension.
+    // Keep the name when it already has an extension; otherwise derive one
+    // from the file's bytes so the shared file keeps a correct extension.
+    let final_name = ensure_extension(&file_name, &content);
+
+    let dest_path = cache_dir.join(final_name);
+    let dest_path_str = dest_path.to_str().ok_or("Invalid cache path")?.to_string();
+
     std::fs::write(&dest_path, &content)
         .map_err(|e| format!("Failed to write file to cache: {}", e))?;
 
     Ok(dest_path_str)
+}
+
+/// Returns `name` unchanged when it already carries an extension, otherwise
+/// appends an extension inferred from the file content (magic bytes).
+fn ensure_extension(name: &str, content: &[u8]) -> String {
+    let has_extension = std::path::Path::new(name)
+        .extension()
+        .map(|e| !e.is_empty())
+        .unwrap_or(false);
+    if has_extension {
+        return name.to_string();
+    }
+
+    if let Some(kind) = infer::get(content) {
+        let ext = kind.extension();
+        if !ext.is_empty() {
+            return format!("{}.{}", name, ext);
+        }
+    }
+
+    name.to_string()
 }

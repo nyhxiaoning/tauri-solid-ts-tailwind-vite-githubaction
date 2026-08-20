@@ -36,6 +36,7 @@ mime_guess = "2"
 tokio-util = { version = "0.7", features = ["io"] }
 hostname = "0.4"
 tracing = "0.1"
+infer = "0.16"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
