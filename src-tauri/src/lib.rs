@@ -1,3 +1,4 @@
+mod content_plugin;
 mod file_manager;
 mod mdns;
 mod network;
@@ -37,6 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(content_plugin::init::<tauri::Wry, ()>())
         .setup(|app| {
             let mdns_manager =
                 MdnsManager::new().expect("Failed to initialize mDNS manager");
@@ -277,11 +279,11 @@ async fn resolve_file_path(
         .read(tauri_plugin_fs::FilePath::from_str(&path).unwrap())
         .map_err(|e| format!("Failed to read content URI: {}", e))?;
 
-    // Preserve the original extension: content:// URIs often expose only an
-    // opaque id (e.g. "1234") as the file name, dropping the real extension.
-    // Keep the name when it already has an extension; otherwise derive one
-    // from the file's bytes so the shared file keeps a correct extension.
-    let final_name = ensure_extension(&file_name, &content);
+    // Resolve the best display name for this content URI. On Android we query
+    // the ContentResolver for the real document name + MIME type; elsewhere (or
+    // on failure) we fall back to the URI's last segment and infer the
+    // extension from the file's bytes.
+    let final_name = resolve_content_name(&app_handle, &path, &file_name, &content);
 
     let dest_path = cache_dir.join(final_name);
     let dest_path_str = dest_path.to_str().ok_or("Invalid cache path")?.to_string();
@@ -290,6 +292,100 @@ async fn resolve_file_path(
         .map_err(|e| format!("Failed to write file to cache: {}", e))?;
 
     Ok(dest_path_str)
+}
+
+/// Resolve a human-readable file name for a `content://` URI.
+///
+/// Prefers the document's real display name (and MIME type) from the Android
+/// ContentResolver so the shared file keeps its original name and extension.
+/// Falls back to the URI segment + byte-based extension inference otherwise.
+#[cfg(target_os = "android")]
+fn resolve_content_name(
+    app: &tauri::AppHandle,
+    uri: &str,
+    uri_segment: &str,
+    content: &[u8],
+) -> String {
+    if let Some(plugin) = app.try_state::<content_plugin::ContentPlugin<tauri::Wry>>() {
+        if let Ok(info) = plugin.get_content_info(uri) {
+            if let Some(name) = info.display_name.filter(|n| !n.is_empty()) {
+                let name = sanitize_filename(&name);
+                if std::path::Path::new(&name).extension().is_some() {
+                    return name;
+                }
+                if let Some(mime) = info.mime_type.as_deref() {
+                    if let Some(ext) = mime_to_ext(mime) {
+                        return format!("{}.{}", name, ext);
+                    }
+                }
+                return name;
+            }
+        }
+    }
+    ensure_extension(uri_segment, content)
+}
+
+#[cfg(not(target_os = "android"))]
+fn resolve_content_name(
+    _app: &tauri::AppHandle,
+    _uri: &str,
+    uri_segment: &str,
+    content: &[u8],
+) -> String {
+    ensure_extension(uri_segment, content)
+}
+
+/// Map a MIME type to a file extension (without the leading dot).
+fn mime_to_ext(mime: &str) -> Option<&'static str> {
+    Some(match mime {
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        "application/gzip" => "gz",
+        "application/x-7z-compressed" => "7z",
+        "application/x-rar-compressed" => "rar",
+        "application/x-tar" => "tar",
+        "application/msword" => "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        "application/vnd.ms-excel" => "xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+        "application/vnd.ms-powerpoint" => "ppt",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "pptx",
+        "text/plain" => "txt",
+        "text/csv" => "csv",
+        "text/markdown" => "md",
+        "application/json" => "json",
+        "application/xml" => "xml",
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
+        "video/x-msvideo" => "avi",
+        "video/x-matroska" => "mkv",
+        "audio/mpeg" => "mp3",
+        "audio/wav" => "wav",
+        "audio/flac" => "flac",
+        "audio/x-wav" => "wav",
+        "application/epub+zip" => "epub",
+        "application/vnd.android.package-archive" => "apk",
+        _ => return None,
+    })
+}
+
+/// Strip characters that are invalid in file names (path separators, etc.).
+#[cfg(target_os = "android")]
+fn sanitize_filename(name: &str) -> String {
+    name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// Returns `name` unchanged when it already carries an extension, otherwise
