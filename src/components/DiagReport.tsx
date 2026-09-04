@@ -33,7 +33,6 @@ const Section: Component<{ title: string; items: [string, number][] }> = (p) => 
 
 const DiagReport: Component<{ report: DiagnosisReport; onExport: () => void }> = (props) => {
   const r = props.report
-  const target = diskTargetGb()
   return (
     <>
       <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -43,11 +42,11 @@ const DiagReport: Component<{ report: DiagnosisReport; onExport: () => void }> =
             <div class="text-xs text-gray-500">已用空间</div>
           </div>
           <div>
-            <div class={`text-2xl font-bold ${r.disk.used_gb > target ? 'text-red-600' : 'text-emerald-600'}`}>
-              {(r.disk.used_gb - target).toFixed(0)} GB
+            <div class={`text-2xl font-bold ${r.disk.used_gb > diskTargetGb() ? 'text-red-600' : 'text-emerald-600'}`}>
+              {(r.disk.used_gb - diskTargetGb()).toFixed(0)} GB
             </div>
             <div class="text-xs text-gray-500">
-              {r.disk.used_gb > target ? '超出目标线' : '低于目标线'}
+              {r.disk.used_gb > diskTargetGb() ? '超出目标线' : '低于目标线'}
             </div>
           </div>
           <div>
