@@ -33,6 +33,8 @@ jobs:
 
       - run: pnpm install
 
+      - run: pnpm test
+
       # ✅ 关键：构建前端
       - run: pnpm build
 
