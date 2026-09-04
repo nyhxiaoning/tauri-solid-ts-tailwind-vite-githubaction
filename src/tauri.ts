@@ -67,6 +67,14 @@ export interface UninstallResult {
   message: string
 }
 
+export type VersionKind = 'nvm' | 'rustup'
+
+export interface UninstallVersionRequest {
+  kind: VersionKind
+  version: string
+  acknowledgement: string
+}
+
 export interface InUseResult {
   in_use: boolean
 }
@@ -117,20 +125,24 @@ export function clearHistory(): Promise<void> {
   return invoke<void>('clear_history_cmd')
 }
 
-export function listNodeVersions(): Promise<VersionEntry[]> {
-  return invoke<VersionEntry[]>('list_node_versions_cmd')
+async function listVersions(command: string, label: string): Promise<VersionEntry[]> {
+  try {
+    return await invoke<VersionEntry[]>(command)
+  } catch (error) {
+    throw new Error(`${label}：${String(error)}`)
+  }
 }
 
-export function uninstallNodeVersion(version: string): Promise<UninstallResult> {
-  return invoke<UninstallResult>('uninstall_node_version_cmd', { version })
+export function listNodeVersions(): Promise<VersionEntry[]> {
+  return listVersions('list_node_versions_cmd', 'NVM 版本读取失败')
 }
 
 export function listRustToolchains(): Promise<VersionEntry[]> {
-  return invoke<VersionEntry[]>('list_rust_toolchains_cmd')
+  return listVersions('list_rust_toolchains_cmd', 'Rustup 工具链读取失败')
 }
 
-export function uninstallRustToolchain(toolchain: string): Promise<UninstallResult> {
-  return invoke<UninstallResult>('uninstall_rust_toolchain_cmd', { toolchain })
+export function uninstallVersion(request: UninstallVersionRequest): Promise<UninstallResult> {
+  return invoke<UninstallResult>('uninstall_version_cmd', { request })
 }
 
 export function checkIdeInUse(path: string): Promise<InUseResult> {

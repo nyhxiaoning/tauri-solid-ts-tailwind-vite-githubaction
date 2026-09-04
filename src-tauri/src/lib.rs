@@ -3,9 +3,9 @@ mod cleanup;
 use cleanup::history::{HistoryRecord, append_history, clear_history, read_history};
 use cleanup::{
     ActionResult, CleanupAction, DiagnosisReport, DiskUsage, IdeUseStatus, RunActionRequest, Tier,
-    UninstallResult, VersionEntry, actions_by_tier, check_ide_in_use, diagnose, find_action,
-    get_disk_usage, list_node_versions, list_rust_toolchains, run_action, uninstall_node_version,
-    uninstall_rust_toolchain,
+    UninstallResult, UninstallVersionRequest, VersionEntry, VersionKind, actions_by_tier,
+    check_ide_in_use, diagnose, find_action, get_disk_usage, list_node_versions,
+    list_rust_toolchains, run_action, uninstall_version,
 };
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -35,9 +35,8 @@ pub fn run() {
             clear_history_cmd,
             // 交互式命令
             list_node_versions_cmd,
-            uninstall_node_version_cmd,
             list_rust_toolchains_cmd,
-            uninstall_rust_toolchain_cmd,
+            uninstall_version_cmd,
             // IDE 在用检测
             check_ide_in_use_cmd,
         ])
@@ -121,23 +120,73 @@ fn clear_history_cmd(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn list_node_versions_cmd() -> Vec<VersionEntry> {
+fn list_node_versions_cmd() -> Result<Vec<VersionEntry>, String> {
     list_node_versions()
 }
 
 #[tauri::command]
-fn uninstall_node_version_cmd(version: String) -> UninstallResult {
-    uninstall_node_version(&version)
-}
-
-#[tauri::command]
-fn list_rust_toolchains_cmd() -> Vec<VersionEntry> {
+fn list_rust_toolchains_cmd() -> Result<Vec<VersionEntry>, String> {
     list_rust_toolchains()
 }
 
 #[tauri::command]
-fn uninstall_rust_toolchain_cmd(toolchain: String) -> UninstallResult {
-    uninstall_rust_toolchain(&toolchain)
+fn uninstall_version_cmd(
+    app: tauri::AppHandle,
+    request: UninstallVersionRequest,
+) -> UninstallResult {
+    match history_path(&app) {
+        Ok(path) => uninstall_version_and_record(&request, &path),
+        Err(error) => {
+            let mut result = uninstall_version(&request);
+            append_uninstall_history_error(&mut result, &error);
+            result
+        }
+    }
+}
+
+fn uninstall_version_and_record(request: &UninstallVersionRequest, path: &Path) -> UninstallResult {
+    let result = uninstall_version(request);
+    record_uninstall_result(request, result, path)
+}
+
+fn record_uninstall_result(
+    request: &UninstallVersionRequest,
+    mut result: UninstallResult,
+    path: &Path,
+) -> UninstallResult {
+    let base_action_id = match request.kind {
+        VersionKind::Nvm => "s2-03-nvm",
+        VersionKind::Rustup => "s2-05-rustup",
+    };
+    let action = find_action(base_action_id);
+    let history_result = ActionResult {
+        id: format!("{base_action_id}:{}", request.version),
+        name: format!(
+            "{}：{}",
+            action.as_ref().map_or(base_action_id, |action| action.name),
+            request.version
+        ),
+        status: result.status.clone(),
+        before_gb: None,
+        after_gb: None,
+        released_gb: 0.0,
+        estimated: true,
+        message: result.message.clone(),
+    };
+    let record = HistoryRecord::from_action_result(action.as_ref(), &history_result);
+    if let Err(error) = append_history(path, record) {
+        append_uninstall_history_error(&mut result, &error.to_string());
+    }
+    result
+}
+
+fn append_uninstall_history_error(result: &mut UninstallResult, error: &str) {
+    let suffix = format!("日志写入失败：{error}");
+    if result.message.is_empty() {
+        result.message = suffix;
+    } else {
+        result.message.push_str(&format!("；{suffix}"));
+    }
 }
 
 #[tauri::command]
@@ -204,5 +253,53 @@ mod tests {
         assert_eq!(records[0].action_id, request.id);
         assert!(records[0].tier.is_none());
         assert_eq!(records[0].message, "未知清理动作");
+    }
+
+    #[test]
+    fn interactive_uninstall_results_are_immediately_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cleanup-history.json");
+        let request = UninstallVersionRequest {
+            kind: cleanup::VersionKind::Nvm,
+            version: "invalid".into(),
+            acknowledgement: "rebuild-understood".into(),
+        };
+
+        let result = uninstall_version_and_record(&request, &path);
+
+        let records = cleanup::history::read_history(&path).unwrap();
+        assert_eq!(result.status, "failed");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].action_id, "s2-03-nvm:invalid");
+        assert_eq!(records[0].tier, Some(Tier::Two));
+        assert_eq!(records[0].status, result.status);
+        assert!(records[0].estimated);
+    }
+
+    #[test]
+    fn interactive_history_failure_preserves_the_uninstall_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked_parent = dir.path().join("not-a-directory");
+        std::fs::write(&blocked_parent, b"file").unwrap();
+        let request = UninstallVersionRequest {
+            kind: VersionKind::Nvm,
+            version: "v18.20.0".into(),
+            acknowledgement: "rebuild-understood".into(),
+        };
+        let uninstall_result = UninstallResult {
+            version: request.version.clone(),
+            status: "success".into(),
+            message: String::new(),
+        };
+
+        let result = record_uninstall_result(
+            &request,
+            uninstall_result,
+            &blocked_parent.join("history.json"),
+        );
+
+        assert_eq!(result.version, "v18.20.0");
+        assert_eq!(result.status, "success");
+        assert!(result.message.contains("日志写入失败"));
     }
 }

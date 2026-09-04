@@ -1,11 +1,18 @@
 import { Component,createSignal,onMount,For,Show} from 'solid-js'
 import type {CleanupAction,VersionEntry,UninstallResult} from '../tauri'
-import {listNodeVersions,uninstallNodeVersion,listRustToolchains,uninstallRustToolchain} from '../tauri'
+import {listNodeVersions,listRustToolchains,uninstallVersion} from '../tauri'
+import ConfirmDialog from './ConfirmDialog'
 
 interface InteractiveViewProps {
   action: CleanupAction
   onBack: () => void
   onDone: () => void
+}
+
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  return '未知错误'
 }
 
 const InteractiveView: Component<InteractiveViewProps> = (props) => {
@@ -14,20 +21,24 @@ const InteractiveView: Component<InteractiveViewProps> = (props) => {
   const [loading, setLoading] = createSignal(true)
   const [results, setResults] = createSignal<UninstallResult[]>([])
   const [working, setWorking] = createSignal(false)
+  const [confirmOpen, setConfirmOpen] = createSignal(false)
+  const [loadError, setLoadError] = createSignal('')
 
-  onMount(async () => {
+  const loadVersions = async () => {
     try {
       const list = props.action.id === 's2-03-nvm'
         ? await listNodeVersions()
         : await listRustToolchains()
-      // 默认保留 current 版本，其余可选
       setVersions(list)
-      const pre = new Set<string>()
-      for (const v of list) if (!v.current) pre.add(v.name)
-      setSelected(pre)
+    } catch (error) {
+      setLoadError(errorMessage(error))
     } finally {
       setLoading(false)
     }
+  }
+
+  onMount(() => {
+    void loadVersions()
   })
 
   const toggle = (name: string) => {
@@ -39,22 +50,29 @@ const InteractiveView: Component<InteractiveViewProps> = (props) => {
     })
   }
 
-  const uninstallOne = async (name: string): Promise<UninstallResult> => {
-    return props.action.id === 's2-03-nvm'
-      ? await uninstallNodeVersion(name)
-      : await uninstallRustToolchain(name)
+  const uninstallOne = async (name: string, acknowledgement: string): Promise<UninstallResult> => {
+    return uninstallVersion({
+      kind: props.action.id === 's2-03-nvm' ? 'nvm' : 'rustup',
+      version: name,
+      acknowledgement,
+    })
   }
 
-  const handleRun = async () => {
+  const handleRun = () => {
+    if (selected().size > 0) setConfirmOpen(true)
+  }
+
+  const handleConfirmedRun = async () => {
+    setConfirmOpen(false)
     const ids = Array.from(selected())
     if (ids.length === 0) return
     setWorking(true)
     for (const id of ids) {
       try {
-        const r = await uninstallOne(id)
+        const r = await uninstallOne(id, 'rebuild-understood')
         setResults((prev) => [...prev, r])
-      } catch (e: any) {
-        setResults((prev) => [...prev, { version: id, status: 'failed', message: String(e) }])
+      } catch (e: unknown) {
+        setResults((prev) => [...prev, { version: id, status: 'failed', message: errorMessage(e) }])
       }
       await new Promise((r) => setTimeout(r, 200))
     }
@@ -64,8 +82,6 @@ const InteractiveView: Component<InteractiveViewProps> = (props) => {
 
   const isNvm = () => props.action.id === 's2-03-nvm'
   const title = isNvm() ? 'NVM 旧 Node 版本' : 'Rustup 旧工具链'
-  const placeholder = isNvm() ? 'node' : 'toolchain'
-
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
@@ -79,12 +95,19 @@ const InteractiveView: Component<InteractiveViewProps> = (props) => {
           </button>
         </div>
 
-        <Show when={loading()} fallback={<div class="text-sm text-gray-400">加载版本中…</div>}>
+        <Show when={loading()}>
           <div class="text-sm text-gray-400">加载版本中…</div>
         </Show>
 
         <Show when={!loading() && versions().length === 0}>
-          <div class="rounded bg-gray-50 p-3 text-sm text-gray-600">未检测到已安装的版本。</div>
+          <Show
+            when={loadError()}
+            fallback={<div class="rounded bg-gray-50 p-3 text-sm text-gray-600">未检测到已安装的版本。</div>}
+          >
+            <div role="alert" class="rounded bg-red-50 p-3 text-sm text-red-700">
+              版本列表读取失败：{loadError()}
+            </div>
+          </Show>
         </Show>
 
         <Show when={versions().length > 0}>
@@ -129,11 +152,20 @@ const InteractiveView: Component<InteractiveViewProps> = (props) => {
               disabled={working() || selected().size === 0}
               class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-400"
             >
-              {working ? '卸载中…' : `卸载已选 (${selected().size})`}
+              {working() ? '卸载中…' : `卸载已选 (${selected().size})`}
             </button>
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmOpen()}
+        title="确认卸载所选版本"
+        message={`将卸载 ${selected().size} 个版本，此操作需要重新安装相应工具链。`}
+        intensity="strong"
+        confirmLabel="确认卸载"
+        onConfirm={() => { void handleConfirmedRun() }}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   )
 }

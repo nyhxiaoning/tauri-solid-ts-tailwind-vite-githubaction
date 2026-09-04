@@ -10,8 +10,13 @@ use std::process::Command;
 pub mod history;
 pub mod process;
 pub mod safety;
+pub mod versions;
 
 pub use process::{CleanupOperation, IdeUseStatus};
+pub use versions::{
+    UninstallResult, UninstallVersionRequest, VersionEntry, VersionKind, list_node_versions,
+    list_rust_toolchains, uninstall_version,
+};
 
 // ---------------------------------------------------------------------------
 // 枚举与数据结构
@@ -481,6 +486,7 @@ fn parse_df_k(data: &str) -> DiskUsage {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -945,131 +951,6 @@ fn du_top(base: &[&str], limit: usize) -> Vec<(String, f64)> {
 // ---------------------------------------------------------------------------
 // 交互式命令：NVM / Rustup
 // ---------------------------------------------------------------------------
-
-#[derive(Serialize, Clone, Debug)]
-pub struct VersionEntry {
-    pub name: String,
-    pub current: bool,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct UninstallResult {
-    pub version: String,
-    pub status: String,
-    pub message: String,
-}
-
-/// 列出已安装的 Node 版本（NVM）
-pub fn list_node_versions() -> Vec<VersionEntry> {
-    let home = std::env::home_dir().unwrap_or_default();
-    let nvm_dir = home.join(".nvm");
-    let mut versions = vec![];
-    if let Ok(entries) = std::fs::read_dir(nvm_dir.join("versions").join("node")) {
-        for e in entries.flatten() {
-            let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('v') {
-                let current = home.join(".nvm").join("current") == e.path();
-                versions.push(VersionEntry { name, current });
-            }
-        }
-    }
-    if versions.is_empty() {
-        // 回退：通过 nvm ls 解析
-        if let Ok(o) = Command::new("bash")
-            .arg("-c")
-            .arg("source ~/.nvm/nvm.sh 2>/dev/null && nvm ls 2>/dev/null")
-            .output()
-        {
-            let s = String::from_utf8_lossy(&o.stdout);
-            for line in s.lines() {
-                let t = line.trim();
-                if t.starts_with('v') {
-                    let v = t.split_whitespace().next().unwrap_or("").to_string();
-                    if !v.is_empty() {
-                        versions.push(VersionEntry {
-                            name: v,
-                            current: t.contains("->"),
-                        });
-                    }
-                }
-            }
-        }
-    }
-    versions
-}
-
-/// 卸载指定 Node 版本
-pub fn uninstall_node_version(version: &str) -> UninstallResult {
-    let r = Command::new("bash")
-        .arg("-c")
-        .arg(format!(
-            "source ~/.nvm/nvm.sh 2>/dev/null && nvm uninstall {}",
-            version
-        ))
-        .output();
-    match r {
-        Ok(o) if o.status.success() => UninstallResult {
-            version: version.to_string(),
-            status: "success".into(),
-            message: String::new(),
-        },
-        Ok(o) => UninstallResult {
-            version: version.to_string(),
-            status: "failed".into(),
-            message: String::from_utf8_lossy(&o.stderr).trim().to_string(),
-        },
-        Err(e) => UninstallResult {
-            version: version.to_string(),
-            status: "failed".into(),
-            message: format!("{}", e),
-        },
-    }
-}
-
-/// 列出已安装的 Rust 工具链
-pub fn list_rust_toolchains() -> Vec<VersionEntry> {
-    let mut versions = vec![];
-    if let Ok(o) = Command::new("rustup").arg("toolchain").arg("list").output() {
-        let s = String::from_utf8_lossy(&o.stdout);
-        for line in s.lines() {
-            let t = line.trim();
-            if !t.is_empty() {
-                versions.push(VersionEntry {
-                    name: t.to_string(),
-                    current: t.contains("(default)"),
-                });
-            }
-        }
-    }
-    versions
-}
-
-/// 卸载指定 Rust 工具链
-pub fn uninstall_rust_toolchain(name: &str) -> UninstallResult {
-    let r = Command::new("rustup")
-        .arg("toolchain")
-        .arg("remove")
-        .arg(name)
-        .arg("-y")
-        .output();
-    match r {
-        Ok(o) if o.status.success() => UninstallResult {
-            version: name.to_string(),
-            status: "success".into(),
-            message: String::new(),
-        },
-        Ok(o) => UninstallResult {
-            version: name.to_string(),
-            status: "failed".into(),
-            message: String::from_utf8_lossy(&o.stderr).trim().to_string(),
-        },
-        Err(e) => UninstallResult {
-            version: name.to_string(),
-            status: "failed".into(),
-            message: format!("{}", e),
-        },
-    }
-}
 
 /// 检测某 IDE 是否正在运行（用于三级清理的安全锁）。
 pub fn check_ide_in_use(name: &str) -> IdeUseStatus {
