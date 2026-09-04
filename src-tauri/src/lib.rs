@@ -6,6 +6,8 @@ use cleanup::{
     get_disk_usage, list_node_versions, list_rust_toolchains, run_action, uninstall_node_version,
     uninstall_rust_toolchain,
 };
+use std::path::{Path, PathBuf};
+use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -95,4 +97,28 @@ fn uninstall_rust_toolchain_cmd(toolchain: String) -> UninstallResult {
 #[tauri::command]
 fn check_ide_in_use_cmd(path: String) -> IdeUseStatus {
     check_ide_in_use(&path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executing_a_registered_action_immediately_persists_its_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cleanup-history.json");
+        let request = RunActionRequest {
+            id: "s2-03-nvm".into(),
+            acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_and_record(&request, &path);
+
+        let records = cleanup::history::read_history(&path).unwrap();
+        assert_eq!(result.status, "skipped");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].action_id, request.id);
+        assert_eq!(records[0].status, result.status);
+    }
 }

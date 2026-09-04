@@ -1,0 +1,4 @@
+#Thu Aug 20 23:49:36 CST 2026
+base.0=/Users/henryheng/Code/personCode/tauri-solid-ts-tailwind-vite-githubaction/src-tauri/gen/android/app/build/intermediates/dex/universalRelease/minifyUniversalReleaseWithR8/classes.dex
+path.0=classes.dex
+renamed.0=classes.dex

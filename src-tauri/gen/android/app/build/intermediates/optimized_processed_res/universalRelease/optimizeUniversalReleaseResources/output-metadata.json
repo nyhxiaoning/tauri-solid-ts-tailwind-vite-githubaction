@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "artifactType": {
+    "type": "OPTIMIZED_PROCESSED_RES",
+    "kind": "Directory"
+  },
+  "applicationId": "com.lanshare.app",
+  "variantName": "universalRelease",
+  "elements": [
+    {
+      "type": "SINGLE",
+      "filters": [],
+      "attributes": [],
+      "versionCode": 2000001,
+      "versionName": "2.0.1",
+      "outputFile": "resources-universal-release-optimize.ap_"
+    }
+  ],
+  "elementType": "File"
+}

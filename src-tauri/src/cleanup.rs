@@ -9,6 +9,7 @@ use std::process::Command;
 
 pub mod process;
 pub mod safety;
+pub mod history;
 
 pub use process::{CleanupOperation, IdeUseStatus};
 
@@ -16,7 +17,7 @@ pub use process::{CleanupOperation, IdeUseStatus};
 // 枚举与数据结构
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum Tier {
     /// 一级：零风险，全是缓存
     One,
