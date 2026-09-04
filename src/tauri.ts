@@ -36,6 +36,26 @@ export interface ActionResult {
   message: string
 }
 
+export interface RunActionRequest {
+  id: string
+  acknowledgement: string
+  excluded_paths: string[]
+}
+
+export interface HistoryRecord {
+  record_id: string
+  timestamp_ms: number
+  action_id: string
+  action_name: string
+  tier: Tier | null
+  status: ActionResult['status']
+  before_gb: number | null
+  after_gb: number | null
+  released_gb: number
+  estimated: boolean
+  message: string
+}
+
 export interface VersionEntry {
   name: string
   current: boolean
@@ -76,8 +96,25 @@ export function findAction(id: string): Promise<CleanupAction | null> {
   return invoke<CleanupAction | null>('find_action_cmd', { id })
 }
 
-export function runAction(id: string): Promise<ActionResult> {
-  return invoke<ActionResult>('run_action_cmd', { id })
+export function runAction(request: RunActionRequest): Promise<ActionResult>
+/**
+ * Temporary Task 5 compatibility bridge for callers not yet migrated.
+ * @deprecated Pass a RunActionRequest so Rust can enforce acknowledgements and exclusions.
+ */
+export function runAction(id: string): Promise<ActionResult>
+export function runAction(requestOrId: RunActionRequest | string): Promise<ActionResult> {
+  const request = typeof requestOrId === 'string'
+    ? { id: requestOrId, acknowledgement: 'confirmed', excluded_paths: [] }
+    : requestOrId
+  return invoke<ActionResult>('run_action_cmd', { request })
+}
+
+export function listHistory(): Promise<HistoryRecord[]> {
+  return invoke<HistoryRecord[]>('list_history_cmd')
+}
+
+export function clearHistory(): Promise<void> {
+  return invoke<void>('clear_history_cmd')
 }
 
 export function listNodeVersions(): Promise<VersionEntry[]> {

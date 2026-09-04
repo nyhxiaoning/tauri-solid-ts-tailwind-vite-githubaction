@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub mod history;
 pub mod process;
 pub mod safety;
-pub mod history;
 
 pub use process::{CleanupOperation, IdeUseStatus};
 
@@ -18,6 +18,7 @@ pub use process::{CleanupOperation, IdeUseStatus};
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// 一级：零风险，全是缓存
     One,
