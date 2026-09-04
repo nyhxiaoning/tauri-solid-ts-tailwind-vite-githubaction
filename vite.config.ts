@@ -32,7 +32,9 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_PLATFORM', 'TAURI_ARCH', 'TAURI_FAMILY', 'TAURI_PLATFORM_VERSION', 'TAURI_PLATFORM_TYPE', 'TAURI_DEBUG'],
   build: {
     // Tauri uses Chromium on Windows and WebKit on macOS and Linux
-    target: process.env.TAURI_PLATFORM == 'windows' ? 'chrome105' : 'safari13',
+    // safari15+ required: esbuild 0.27 cannot transpile destructuring to safari13,
+    // which SolidJS signal idioms rely on.
+    target: process.env.TAURI_PLATFORM == 'windows' ? 'chrome105' : 'safari15',
     // don't minify for debug builds
     minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
     cssMinify: !process.env.TAURI_DEBUG ? 'lightningcss' : false,
