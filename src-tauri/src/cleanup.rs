@@ -3,9 +3,14 @@
 //! 每个清理项都是结构化数据（而非裸字符串），因此确认弹窗、
 //! 风险标签、预估大小、实时反馈都可以自动生成，避免硬编码。
 
-use serde::Serialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+pub mod process;
+pub mod safety;
+
+pub use process::{CleanupOperation, IdeUseStatus};
 
 // ---------------------------------------------------------------------------
 // 枚举与数据结构
@@ -43,8 +48,17 @@ pub struct CleanupAction {
     pub interactive: bool,
     /// 用于实时测量大小的路径（清理前后各测一次）
     pub scan_paths: Vec<String>,
-    /// 要执行的 shell 命令（通过 bash -c 执行，支持 ~ 与 glob）
-    pub run_commands: Vec<String>,
+    /// 仅由后端注册表提供，永远不会从前端反序列化。
+    #[serde(skip)]
+    pub operations: Vec<CleanupOperation>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct RunActionRequest {
+    pub id: String,
+    pub acknowledgement: String,
+    #[serde(default)]
+    pub excluded_paths: Vec<String>,
 }
 
 /// 命令执行结果
@@ -81,7 +95,13 @@ pub struct DiagnosisReport {
 // 命令注册表
 // ---------------------------------------------------------------------------
 
-fn t1(id: &'static str, name: &'static str, est: f64, scan: &[&str], cmds: &[&str]) -> CleanupAction {
+fn t1(
+    id: &'static str,
+    name: &'static str,
+    est: f64,
+    scan: &[&str],
+    operation: CleanupOperation,
+) -> CleanupAction {
     CleanupAction {
         id,
         tier: Tier::One,
@@ -91,11 +111,18 @@ fn t1(id: &'static str, name: &'static str, est: f64, scan: &[&str], cmds: &[&st
         requires_sudo: false,
         interactive: false,
         scan_paths: scan.iter().map(|s| s.to_string()).collect(),
-        run_commands: cmds.iter().map(|s| s.to_string()).collect(),
+        operations: vec![operation],
     }
 }
 
-fn t2(id: &'static str, name: &'static str, est: f64, risk: Risk, scan: &[&str], cmds: &[&str]) -> CleanupAction {
+fn t2(
+    id: &'static str,
+    name: &'static str,
+    est: f64,
+    risk: Risk,
+    scan: &[&str],
+    operation: CleanupOperation,
+) -> CleanupAction {
     CleanupAction {
         id,
         tier: Tier::Two,
@@ -105,7 +132,7 @@ fn t2(id: &'static str, name: &'static str, est: f64, risk: Risk, scan: &[&str],
         requires_sudo: false,
         interactive: false,
         scan_paths: scan.iter().map(|s| s.to_string()).collect(),
-        run_commands: cmds.iter().map(|s| s.to_string()).collect(),
+        operations: vec![operation],
     }
 }
 
@@ -113,56 +140,204 @@ fn t2(id: &'static str, name: &'static str, est: f64, risk: Risk, scan: &[&str],
 pub fn all_actions() -> Vec<CleanupAction> {
     vec![
         // ---- 一级：零风险 ----
-        t1("l1-01-npm", "npm 缓存", 15.0, &["~/.npm/_cacache"], &["rm -rf ~/.npm/_cacache"]),
-        t1("l1-02-bun", "bun 缓存", 2.0, &["~/.bun/install/cache"], &["rm -rf ~/.bun/install/cache"]),
-        t1("l1-03-pip", "pip 缓存", 1.0, &["~/Library/Caches/pip"], &["rm -rf ~/Library/Caches/pip"]),
-        t1("l1-04-yarn", "Yarn 缓存", 1.0, &["~/Library/Caches/Yarn/v6"], &["rm -rf ~/Library/Caches/Yarn/v6"]),
-        t1("l1-05-pnpm", "pnpm 缓存", 3.0, &["~/Library/Caches/pnpm"], &["rm -rf ~/Library/Caches/pnpm"]),
-        t1("l1-06-cache", "通用 cache", 5.0, &["~/.cache"], &["rm -rf ~/.cache/*"]),
-        t1("l1-07-ts", "TypeScript 缓存", 2.0, &["~/Library/Caches/typescript"], &["rm -rf ~/Library/Caches/typescript"]),
-        t1("l1-08-node-gyp", "node-gyp 缓存", 1.0, &["~/Library/Caches/node-gyp"], &["rm -rf ~/Library/Caches/node-gyp"]),
-        t1("l1-09-go", "Go 构建缓存", 3.0, &["~/Library/Caches/go-build"], &["rm -rf ~/Library/Caches/go-build"]),
-        t1("l1-10-google", "Google 缓存", 2.0, &["~/Library/Caches/Google"], &["rm -rf ~/Library/Caches/Google"]),
-        t1("l1-11-brew", "Homebrew 缓存", 3.0, &["~/Library/Caches/Homebrew"], &["rm -rf ~/Library/Caches/Homebrew"]),
-        t1("l1-12-jetbrains", "JetBrains 缓存", 3.0, &["~/Library/Caches/JetBrains"], &["rm -rf ~/Library/Caches/JetBrains"]),
-        t1("l1-13-geo", "GeoServices 缓存", 1.0, &["~/Library/Caches/GeoServices"], &["rm -rf ~/Library/Caches/GeoServices"]),
+        t1(
+            "l1-01-npm",
+            "npm 缓存",
+            15.0,
+            &["~/.npm/_cacache"],
+            CleanupOperation::RemoveTarget("~/.npm/_cacache"),
+        ),
+        t1(
+            "l1-02-bun",
+            "bun 缓存",
+            2.0,
+            &["~/.bun/install/cache"],
+            CleanupOperation::RemoveTarget("~/.bun/install/cache"),
+        ),
+        t1(
+            "l1-03-pip",
+            "pip 缓存",
+            1.0,
+            &["~/Library/Caches/pip"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/pip"),
+        ),
+        t1(
+            "l1-04-yarn",
+            "Yarn 缓存",
+            1.0,
+            &["~/Library/Caches/Yarn/v6"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/Yarn/v6"),
+        ),
+        t1(
+            "l1-05-pnpm",
+            "pnpm 缓存",
+            3.0,
+            &["~/Library/Caches/pnpm"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/pnpm"),
+        ),
+        t1(
+            "l1-06-cache",
+            "通用 cache",
+            5.0,
+            &["~/.cache"],
+            CleanupOperation::RemoveContents("~/.cache"),
+        ),
+        t1(
+            "l1-07-ts",
+            "TypeScript 缓存",
+            2.0,
+            &["~/Library/Caches/typescript"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/typescript"),
+        ),
+        t1(
+            "l1-08-node-gyp",
+            "node-gyp 缓存",
+            1.0,
+            &["~/Library/Caches/node-gyp"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/node-gyp"),
+        ),
+        t1(
+            "l1-09-go",
+            "Go 构建缓存",
+            3.0,
+            &["~/Library/Caches/go-build"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/go-build"),
+        ),
+        t1(
+            "l1-10-google",
+            "Google 缓存",
+            2.0,
+            &["~/Library/Caches/Google"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/Google"),
+        ),
+        t1(
+            "l1-11-brew",
+            "Homebrew 缓存",
+            3.0,
+            &["~/Library/Caches/Homebrew"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/Homebrew"),
+        ),
+        t1(
+            "l1-12-jetbrains",
+            "JetBrains 缓存",
+            3.0,
+            &["~/Library/Caches/JetBrains"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/JetBrains"),
+        ),
+        t1(
+            "l1-13-geo",
+            "GeoServices 缓存",
+            1.0,
+            &["~/Library/Caches/GeoServices"],
+            CleanupOperation::RemoveTarget("~/Library/Caches/GeoServices"),
+        ),
         t1(
             "l1-14-appcaches",
             "应用更新缓存",
             3.0,
             &["~/Library/Application Support/Caches"],
-            &["rm -rf ~/Library/Application\\ Support/Caches/*"],
+            CleanupOperation::RemoveContents("~/Library/Application Support/Caches"),
         ),
         // Docker / brew 无单一测量路径，用预估值
         CleanupAction {
-            id: "l1-15-docker", tier: Tier::One, name: "Docker 清理", estimate_gb: 5.0,
-            risk: Risk::Zero, requires_sudo: false, interactive: false,
-            scan_paths: vec![], run_commands: vec!["docker system prune -a -f".to_string()],
+            id: "l1-15-docker",
+            tier: Tier::One,
+            name: "Docker 清理",
+            estimate_gb: 5.0,
+            risk: Risk::Zero,
+            requires_sudo: false,
+            interactive: false,
+            scan_paths: vec![],
+            operations: vec![CleanupOperation::External {
+                program: "docker",
+                args: &["system", "prune", "-a", "-f"],
+            }],
         },
         CleanupAction {
-            id: "l1-16-brewcleanup", tier: Tier::One, name: "Homebrew 旧版本", estimate_gb: 3.0,
-            risk: Risk::Zero, requires_sudo: false, interactive: false,
-            scan_paths: vec![], run_commands: vec!["brew cleanup --prune=all".to_string()],
+            id: "l1-16-brewcleanup",
+            tier: Tier::One,
+            name: "Homebrew 旧版本",
+            estimate_gb: 3.0,
+            risk: Risk::Zero,
+            requires_sudo: false,
+            interactive: false,
+            scan_paths: vec![],
+            operations: vec![CleanupOperation::External {
+                program: "brew",
+                args: &["cleanup", "--prune=all"],
+            }],
         },
-
         // ---- 二级：低风险 ----
-        t2("s2-01-codegraph", "CodeGraph 索引", 30.0, Risk::Low, &["~/.codegraph/codegraph.db"], &["rm -rf ~/.codegraph/codegraph.db"]),
-        t2("s2-02-npm-all", "npm 全部缓存", 10.0, Risk::Low, &["~/.npm"], &["rm -rf ~/.npm/*"]),
+        t2(
+            "s2-01-codegraph",
+            "CodeGraph 索引",
+            30.0,
+            Risk::Low,
+            &["~/.codegraph/codegraph.db"],
+            CleanupOperation::RemoveTarget("~/.codegraph/codegraph.db"),
+        ),
+        t2(
+            "s2-02-npm-all",
+            "npm 全部缓存",
+            10.0,
+            Risk::Low,
+            &["~/.npm"],
+            CleanupOperation::RemoveContents("~/.npm"),
+        ),
         CleanupAction {
-            id: "s2-03-nvm", tier: Tier::Two, name: "NVM 旧 Node 版本", estimate_gb: 5.0,
-            risk: Risk::Low, requires_sudo: false, interactive: true,
-            scan_paths: vec![], run_commands: vec![],
+            id: "s2-03-nvm",
+            tier: Tier::Two,
+            name: "NVM 旧 Node 版本",
+            estimate_gb: 5.0,
+            risk: Risk::Low,
+            requires_sudo: false,
+            interactive: true,
+            scan_paths: vec![],
+            operations: vec![],
         },
-        t2("s2-04-gradle", "Gradle 构建缓存", 8.0, Risk::Low, &["~/.gradle/caches"], &["rm -rf ~/.gradle/caches"]),
+        t2(
+            "s2-04-gradle",
+            "Gradle 构建缓存",
+            8.0,
+            Risk::Low,
+            &["~/.gradle/caches"],
+            CleanupOperation::RemoveTarget("~/.gradle/caches"),
+        ),
         CleanupAction {
-            id: "s2-05-rustup", tier: Tier::Two, name: "Rustup 旧工具链", estimate_gb: 5.0,
-            risk: Risk::Low, requires_sudo: false, interactive: true,
-            scan_paths: vec![], run_commands: vec![],
+            id: "s2-05-rustup",
+            tier: Tier::Two,
+            name: "Rustup 旧工具链",
+            estimate_gb: 5.0,
+            risk: Risk::Low,
+            requires_sudo: false,
+            interactive: true,
+            scan_paths: vec![],
+            operations: vec![],
         },
-        t2("s2-06-cargo", "Cargo 缓存", 8.0, Risk::Low, &["~/.cargo/registry"], &["cargo cache --remove-all 2>/dev/null || rm -rf ~/.cargo/registry"]),
-        t2("s2-07-vite", "Vite 构建缓存", 3.0, Risk::Low, &["~/.vite-plus"], &["rm -rf ~/.vite-plus"]),
-        t2("s2-08-maven", "Maven 缓存", 8.0, Risk::Low, &["~/.m2/repository"], &["rm -rf ~/.m2/repository"]),
-
+        t2(
+            "s2-06-cargo",
+            "Cargo 缓存",
+            8.0,
+            Risk::Low,
+            &["~/.cargo/registry"],
+            CleanupOperation::RemoveTarget("~/.cargo/registry"),
+        ),
+        t2(
+            "s2-07-vite",
+            "Vite 构建缓存",
+            3.0,
+            Risk::Low,
+            &["~/.vite-plus"],
+            CleanupOperation::RemoveTarget("~/.vite-plus"),
+        ),
+        t2(
+            "s2-08-maven",
+            "Maven 缓存",
+            8.0,
+            Risk::Low,
+            &["~/.m2/repository"],
+            CleanupOperation::RemoveTarget("~/.m2/repository"),
+        ),
         // ---- 三级：中风险，IDE 冗余 ----
         ide("t3-01-windsurf", "Windsurf", 2.7, "~/.windsurf"),
         ide("t3-02-codex", "Codex", 1.8, "~/.codex"),
@@ -184,12 +359,15 @@ fn ide(id: &'static str, name: &'static str, est: f64, path: &'static str) -> Cl
         requires_sudo: false,
         interactive: false,
         scan_paths: vec![path.to_string()],
-        run_commands: vec![format!("rm -rf {}", path)],
+        operations: vec![CleanupOperation::RemoveTarget(path)],
     }
 }
 
 pub fn actions_by_tier(tier: Tier) -> Vec<CleanupAction> {
-    all_actions().into_iter().filter(|a| a.tier == tier).collect()
+    all_actions()
+        .into_iter()
+        .filter(|a| a.tier == tier)
+        .collect()
 }
 
 pub fn find_action(id: &str) -> Option<CleanupAction> {
@@ -201,10 +379,14 @@ pub fn find_action(id: &str) -> Option<CleanupAction> {
 // ---------------------------------------------------------------------------
 
 fn expand_home(p: &str) -> PathBuf {
+    expand_home_at(p, &std::env::home_dir().unwrap_or_default())
+}
+
+fn expand_home_at(p: &str, home: &Path) -> PathBuf {
     if p == "~" {
-        std::env::home_dir().unwrap_or_default()
-    } else if p.starts_with("~/") {
-        std::env::home_dir().unwrap_or_default().join(&p[2..])
+        home.to_path_buf()
+    } else if let Some(relative) = p.strip_prefix("~/") {
+        home.join(relative)
     } else {
         PathBuf::from(p)
     }
@@ -225,13 +407,13 @@ fn du_gb(path: &PathBuf) -> Option<f64> {
     Some(kb / 1_000_000.0)
 }
 
-fn measure_paths(paths: &[String]) -> Option<f64> {
+fn measure_paths_at(paths: &[String], home: &Path) -> Option<f64> {
     if paths.is_empty() {
         return None;
     }
     let total: f64 = paths
         .iter()
-        .filter_map(|p| du_gb(&expand_home(p)))
+        .filter_map(|p| du_gb(&expand_home_at(p, home)))
         .sum();
     Some(total)
 }
@@ -249,7 +431,14 @@ pub fn get_disk_usage() -> DiskUsage {
     let home = std::env::home_dir().unwrap_or_default();
     let out = match Command::new("df").args(["-k"]).arg(&home).output() {
         Ok(o) => o,
-        Err(_) => return DiskUsage { total_gb: 0.0, used_gb: 0.0, available_gb: 0.0, usage_pct: 0.0 },
+        Err(_) => {
+            return DiskUsage {
+                total_gb: 0.0,
+                used_gb: 0.0,
+                available_gb: 0.0,
+                usage_pct: 0.0,
+            };
+        }
     };
     let s = String::from_utf8_lossy(&out.stdout);
     let data = s.lines().nth(1).unwrap_or("");
@@ -264,20 +453,46 @@ pub fn get_disk_usage() -> DiskUsage {
 fn parse_df_k(data: &str) -> DiskUsage {
     let cols: Vec<&str> = data.split_whitespace().collect();
     if cols.len() < 4 {
-        return DiskUsage { total_gb: 0.0, used_gb: 0.0, available_gb: 0.0, usage_pct: 0.0 };
+        return DiskUsage {
+            total_gb: 0.0,
+            used_gb: 0.0,
+            available_gb: 0.0,
+            usage_pct: 0.0,
+        };
     }
     let total: f64 = cols[1].parse().unwrap_or(0.0) / 1_000_000.0;
     let used: f64 = cols[2].parse().unwrap_or(0.0) / 1_000_000.0;
     let avail: f64 = cols[3].parse().unwrap_or(0.0) / 1_000_000.0;
     // 用 used/total，与界面「已用/总量」文字保持一致。
     // macOS 的 Capacity 列口径是 used/(used+available)（不含预留块），会与文字打架。
-    let pct = if total > 0.0 { used / total * 100.0 } else { 0.0 };
-    DiskUsage { total_gb: total, used_gb: used, available_gb: avail, usage_pct: pct }
+    let pct = if total > 0.0 {
+        used / total * 100.0
+    } else {
+        0.0
+    };
+    DiskUsage {
+        total_gb: total,
+        used_gb: used,
+        available_gb: avail,
+        usage_pct: pct,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_home(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let home =
+            std::env::temp_dir().join(format!("cleanup-hub-{name}-{}-{nonce}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        home
+    }
 
     #[test]
     fn parse_macos_df_k_data_volume() {
@@ -286,7 +501,11 @@ mod tests {
         let d = parse_df_k(line);
         assert!((d.total_gb - 971.35).abs() < 0.1, "total {}", d.total_gb);
         assert!((d.used_gb - 904.74).abs() < 0.1, "used {}", d.used_gb);
-        assert!((d.available_gb - 15.93).abs() < 0.1, "avail {}", d.available_gb);
+        assert!(
+            (d.available_gb - 15.93).abs() < 0.1,
+            "avail {}",
+            d.available_gb
+        );
         // 进度条必须与「已用/总量」文字一致
         assert!((d.usage_pct - 93.14).abs() < 0.1, "pct {}", d.usage_pct);
     }
@@ -297,84 +516,382 @@ mod tests {
         assert_eq!(d.total_gb, 0.0);
         assert_eq!(d.usage_pct, 0.0);
     }
+
+    #[test]
+    fn run_action_rejects_an_invalid_acknowledgement_before_deleting() {
+        let home = test_home("ack");
+        let target = home.join(".npm/_cacache");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("cache.bin"), b"cache").unwrap();
+        let request = RunActionRequest {
+            id: "l1-01-npm".into(),
+            acknowledgement: "yes".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+        assert_eq!(result.status, "failed");
+        assert!(target.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn run_action_removes_only_a_registered_target() {
+        let home = test_home("registered-target");
+        let target = home.join(".npm/_cacache");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("cache.bin"), b"cache").unwrap();
+        let request = RunActionRequest {
+            id: "l1-01-npm".into(),
+            acknowledgement: "confirmed".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+        assert_eq!(result.status, "success");
+        assert!(!target.exists());
+        assert!(home.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn run_action_skips_the_entire_target_when_a_descendant_is_excluded() {
+        let home = test_home("excluded-target");
+        let target = home.join(".cache");
+        let excluded = target.join("keep");
+        std::fs::create_dir_all(&excluded).unwrap();
+        std::fs::write(target.join("discard.bin"), b"cache").unwrap();
+        let request = RunActionRequest {
+            id: "l1-06-cache".into(),
+            acknowledgement: "confirmed".into(),
+            excluded_paths: vec!["~/.cache/keep".into()],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+        assert_eq!(result.status, "skipped");
+        assert!(result.message.contains(".cache/keep"));
+        assert!(excluded.exists());
+        assert!(target.join("discard.bin").exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn run_action_rejects_invalid_exclusions_before_deleting() {
+        for (index, invalid) in [".npm", "~/.npm/../Documents", "~someone/.npm"]
+            .into_iter()
+            .enumerate()
+        {
+            let home = test_home(&format!("invalid-exclusion-{index}"));
+            let target = home.join(".npm/_cacache");
+            std::fs::create_dir_all(&target).unwrap();
+            std::fs::write(target.join("cache.bin"), b"cache").unwrap();
+            let request = RunActionRequest {
+                id: "l1-01-npm".into(),
+                acknowledgement: "confirmed".into(),
+                excluded_paths: vec![invalid.into()],
+            };
+
+            let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+            assert_eq!(result.status, "failed", "invalid exclusion: {invalid}");
+            assert!(target.exists(), "invalid exclusion: {invalid}");
+            std::fs::remove_dir_all(home).unwrap();
+        }
+    }
+
+    #[test]
+    fn run_action_maps_a_missing_registered_target_to_skipped() {
+        let home = test_home("missing-target");
+        let request = RunActionRequest {
+            id: "l1-01-npm".into(),
+            acknowledgement: "confirmed".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+        assert_eq!(result.status, "skipped");
+        assert!(result.message.contains("不存在"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_action_fails_closed_for_final_and_parent_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let cases = [
+            ("l1-06-cache", ".cache", "payload.bin"),
+            ("l1-01-npm", ".npm", "_cacache/payload.bin"),
+        ];
+        for (index, (id, link_name, outside_relative)) in cases.into_iter().enumerate() {
+            let home = test_home(&format!("run-symlink-home-{index}"));
+            let outside = test_home(&format!("run-symlink-outside-{index}"));
+            let outside_file = outside.join(outside_relative);
+            std::fs::create_dir_all(outside_file.parent().unwrap()).unwrap();
+            std::fs::write(&outside_file, b"keep").unwrap();
+            symlink(&outside, home.join(link_name)).unwrap();
+            let request = RunActionRequest {
+                id: id.into(),
+                acknowledgement: "confirmed".into(),
+                excluded_paths: vec![],
+            };
+
+            let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+            assert_eq!(result.status, "failed", "action: {id}");
+            assert!(result.message.contains("符号链接"), "action: {id}");
+            assert!(outside_file.exists(), "action: {id}");
+            std::fs::remove_dir_all(home).unwrap();
+            std::fs::remove_dir_all(outside).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_action_rejects_a_symlinked_exclusion_alias_before_deleting() {
+        use std::os::unix::fs::symlink;
+
+        let home = test_home("exclusion-alias");
+        let keep = home.join(".cache/keep");
+        let keep_file = keep.join("keep.bin");
+        std::fs::create_dir_all(&keep).unwrap();
+        std::fs::write(&keep_file, b"keep").unwrap();
+        symlink(&keep, home.join("keep-alias")).unwrap();
+        let request = RunActionRequest {
+            id: "l1-06-cache".into(),
+            acknowledgement: "confirmed".into(),
+            excluded_paths: vec!["~/keep-alias".into()],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+        let keep_remained = keep_file.exists();
+        let _ = std::fs::remove_dir_all(&home);
+
+        assert_eq!(result.status, "failed");
+        assert!(result.message.contains("符号链接"));
+        assert!(keep_remained);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_action_rejects_a_parent_symlink_in_an_exclusion() {
+        use std::os::unix::fs::symlink;
+
+        let home = test_home("exclusion-parent-alias");
+        let target = home.join(".npm/_cacache");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("cache.bin"), b"cache").unwrap();
+        let alias_destination = home.join("alias-destination");
+        std::fs::create_dir_all(&alias_destination).unwrap();
+        symlink(&alias_destination, home.join("alias-parent")).unwrap();
+        let request = RunActionRequest {
+            id: "l1-01-npm".into(),
+            acknowledgement: "confirmed".into(),
+            excluded_paths: vec!["~/alias-parent/not-created-yet".into()],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+        let target_remained = target.exists();
+        let _ = std::fs::remove_dir_all(&home);
+
+        assert_eq!(result.status, "failed");
+        assert!(result.message.contains("符号链接"));
+        assert!(target_remained);
+    }
+
+    #[test]
+    fn medium_risk_actions_fail_closed_when_process_status_is_unknown() {
+        let home = test_home("ide-check");
+        let target = home.join(".windsurf");
+        std::fs::create_dir_all(&target).unwrap();
+        let request = RunActionRequest {
+            id: "t3-01-windsurf".into(),
+            acknowledgement: " windsurf ".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| {
+            IdeUseStatus::CheckFailed("pgrep unavailable".into())
+        });
+
+        assert_eq!(result.status, "failed");
+        assert!(target.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn medium_risk_actions_are_skipped_while_the_ide_is_running() {
+        let home = test_home("ide-running");
+        let target = home.join(".windsurf");
+        std::fs::create_dir_all(&target).unwrap();
+        let request = RunActionRequest {
+            id: "t3-01-windsurf".into(),
+            acknowledgement: "Windsurf".into(),
+            excluded_paths: vec![],
+        };
+
+        let result = run_action_with_home(&request, &home, |_| IdeUseStatus::Running);
+
+        assert_eq!(result.status, "skipped");
+        assert!(target.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
 }
 
-/// 执行单个清理动作，返回实时测量结果
-pub fn run_action(id: &str) -> ActionResult {
-    let action = match find_action(id) {
-        Some(a) => a,
-        None => return ActionResult {
-            id: id.to_string(), name: String::new(), status: "failed".into(),
-            before_gb: None, after_gb: None, released_gb: 0.0, estimated: false,
-            message: "未知命令".into(),
-        },
-    };
-
-    // 交互式动作（NVM / Rustup）不在此处执行
-    if action.interactive {
-        return ActionResult {
-            id: action.id.to_string(), name: action.name.to_string(), status: "skipped".into(),
-            before_gb: None, after_gb: None, released_gb: 0.0, estimated: false,
-            message: "交互式命令，请在二级菜单中选择版本".into(),
-        };
-    }
-
-    let before_gb = measure_paths(&action.scan_paths);
-
-    // sudo 保护：需要 sudo 的命令不自动请求密码，直接提示
-    if action.requires_sudo {
-        return ActionResult {
-            id: action.id.to_string(), name: action.name.to_string(), status: "skipped".into(),
-            before_gb, after_gb: None, released_gb: 0.0, estimated: false,
-            message: "需要 sudo 权限，请手动执行或前往设置开启 sudo 模式".into(),
-        };
-    }
-
-    let mut all_ok = true;
-    let mut errs: Vec<String> = vec![];
-    for cmd in &action.run_commands {
-        match Command::new("bash").arg("-c").arg(cmd).output() {
-            Ok(o) => {
-                if !o.status.success() {
-                    all_ok = false;
-                    let e = String::from_utf8_lossy(&o.stderr).trim().to_string();
-                    errs.push(if e.is_empty() { "命令返回非零".into() } else { e });
-                }
-            }
-            Err(e) => {
-                all_ok = false;
-                errs.push(format!("执行失败: {}", e));
-            }
-        }
-    }
-
-    let after_gb = measure_paths(&action.scan_paths);
-    let estimated = before_gb.is_none() || after_gb.is_none();
-    let released_gb = match (before_gb, after_gb) {
-        (Some(b), Some(a)) => (b - a).max(0.0),
-        _ => action.estimate_gb,
-    };
-
-    let status = if all_ok { "success" } else { "failed" };
-    let message = if all_ok {
-        if estimated {
-            format!("预估释放 {:.1} GB（无实时测量路径）", released_gb)
-        } else {
-            String::new()
-        }
-    } else {
-        format!("失败: {}", errs.join("；"))
-    };
-
+fn action_result(action: &CleanupAction, status: &str, message: String) -> ActionResult {
     ActionResult {
         id: action.id.to_string(),
         name: action.name.to_string(),
-        status: status.to_string(),
+        status: status.into(),
+        before_gb: None,
+        after_gb: None,
+        released_gb: 0.0,
+        estimated: false,
+        message,
+    }
+}
+
+/// 执行单个清理动作，返回实时测量结果。
+///
+/// 动作 ID 只能解析到内置注册表；确认口令、排除路径和 IDE 状态均在
+/// 后端验证，前端不能传入命令或删除目标。
+pub fn run_action(request: &RunActionRequest) -> ActionResult {
+    let home = std::env::home_dir().unwrap_or_default();
+    run_action_with_home(request, &home, process::check_ide_in_use)
+}
+
+fn run_action_with_home<F>(request: &RunActionRequest, home: &Path, check_ide: F) -> ActionResult
+where
+    F: FnOnce(&str) -> IdeUseStatus,
+{
+    let action = match find_action(&request.id) {
+        Some(action) => action,
+        None => {
+            return ActionResult {
+                id: request.id.clone(),
+                name: String::new(),
+                status: "failed".into(),
+                before_gb: None,
+                after_gb: None,
+                released_gb: 0.0,
+                estimated: false,
+                message: "未知清理动作".into(),
+            };
+        }
+    };
+
+    if let Err(error) = safety::validate_exclusions(&request.excluded_paths, home) {
+        return action_result(&action, "failed", error);
+    }
+
+    if !safety::acknowledgement_valid(&action.risk, action.name, &request.acknowledgement) {
+        return action_result(&action, "failed", "确认信息不匹配，未执行清理".into());
+    }
+    if action.interactive {
+        return action_result(
+            &action,
+            "skipped",
+            "交互式清理必须先选择具体的非当前版本".into(),
+        );
+    }
+    if action.requires_sudo {
+        return action_result(&action, "skipped", "需要 sudo 权限，未自动请求密码".into());
+    }
+    if action.risk == Risk::Medium {
+        match check_ide(action.name) {
+            IdeUseStatus::Running => {
+                return action_result(
+                    &action,
+                    "skipped",
+                    format!("{} 正在运行，未执行清理", action.name),
+                );
+            }
+            IdeUseStatus::CheckFailed(error) => {
+                return action_result(
+                    &action,
+                    "failed",
+                    format!("无法确认 {} 是否正在运行: {error}", action.name),
+                );
+            }
+            IdeUseStatus::NotRunning => {}
+        }
+    }
+
+    for operation in &action.operations {
+        match process::preflight_operation(operation, &request.excluded_paths, home) {
+            Ok(process::OperationPreflight::Ready(_))
+            | Ok(process::OperationPreflight::External) => {}
+            Ok(process::OperationPreflight::Missing(path)) => {
+                return action_result(
+                    &action,
+                    "skipped",
+                    format!("清理目标不存在: {}", path.display()),
+                );
+            }
+            Ok(process::OperationPreflight::Excluded(exclusion)) => {
+                return action_result(
+                    &action,
+                    "skipped",
+                    format!("清理目标与排除路径重叠: {}", exclusion.display()),
+                );
+            }
+            Err(error) => return action_result(&action, "failed", error),
+        }
+    }
+
+    let before_gb = measure_paths_at(&action.scan_paths, home);
+    for operation in &action.operations {
+        match process::execute_operation(operation, &request.excluded_paths, home) {
+            Ok(process::OperationExecution::Completed) => {}
+            Ok(process::OperationExecution::Missing(path)) => {
+                let mut result = action_result(
+                    &action,
+                    "skipped",
+                    format!("清理目标不存在: {}", path.display()),
+                );
+                result.before_gb = before_gb;
+                return result;
+            }
+            Ok(process::OperationExecution::Excluded(exclusion)) => {
+                let mut result = action_result(
+                    &action,
+                    "skipped",
+                    format!("清理目标与排除路径重叠: {}", exclusion.display()),
+                );
+                result.before_gb = before_gb;
+                return result;
+            }
+            Err(error) => {
+                let mut result = action_result(&action, "failed", error);
+                result.before_gb = before_gb;
+                return result;
+            }
+        }
+    }
+
+    let after_gb = measure_paths_at(&action.scan_paths, home);
+    let estimated = before_gb.is_none() || after_gb.is_none();
+    let released_gb = match (before_gb, after_gb) {
+        (Some(before), Some(after)) => (before - after).max(0.0),
+        _ => action.estimate_gb,
+    };
+    ActionResult {
+        id: action.id.into(),
+        name: action.name.into(),
+        status: "success".into(),
         before_gb,
         after_gb,
         released_gb,
         estimated,
-        message,
+        message: if estimated {
+            format!("预估释放 {:.1} GB（无实时测量路径）", released_gb)
+        } else {
+            String::new()
+        },
     }
 }
 
@@ -384,7 +901,12 @@ pub fn diagnose() -> DiagnosisReport {
     let top_caches = du_top(&["~/Library/Caches"], 8);
     let top_app_support = du_top(&["~/Library/Application Support"], 8);
     let top_home = du_top(&["~"], 8);
-    DiagnosisReport { disk, top_caches, top_app_support, top_home }
+    DiagnosisReport {
+        disk,
+        top_caches,
+        top_app_support,
+        top_home,
+    }
 }
 
 fn du_top(base: &[&str], limit: usize) -> Vec<(String, f64)> {
@@ -398,12 +920,17 @@ fn du_top(base: &[&str], limit: usize) -> Vec<(String, f64)> {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.is_dir() {
-                    if let Some(kb) = du_gb(&p) {
-                        if kb > 0.0 {
-                            out.push((p.file_name().unwrap_or_default().to_string_lossy().to_string(), kb));
-                        }
-                    }
+                if p.is_dir()
+                    && let Some(kb) = du_gb(&p)
+                    && kb > 0.0
+                {
+                    out.push((
+                        p.file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
+                        kb,
+                    ));
                 }
             }
         }
@@ -435,7 +962,7 @@ pub fn list_node_versions() -> Vec<VersionEntry> {
     let home = std::env::home_dir().unwrap_or_default();
     let nvm_dir = home.join(".nvm");
     let mut versions = vec![];
-    if let Ok(entries) = std::fs::read_dir(&nvm_dir.join("versions").join("node")) {
+    if let Ok(entries) = std::fs::read_dir(nvm_dir.join("versions").join("node")) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             if name.starts_with('v') {
@@ -446,14 +973,21 @@ pub fn list_node_versions() -> Vec<VersionEntry> {
     }
     if versions.is_empty() {
         // 回退：通过 nvm ls 解析
-        if let Ok(o) = Command::new("bash").arg("-c").arg("source ~/.nvm/nvm.sh 2>/dev/null && nvm ls 2>/dev/null").output() {
+        if let Ok(o) = Command::new("bash")
+            .arg("-c")
+            .arg("source ~/.nvm/nvm.sh 2>/dev/null && nvm ls 2>/dev/null")
+            .output()
+        {
             let s = String::from_utf8_lossy(&o.stdout);
             for line in s.lines() {
                 let t = line.trim();
                 if t.starts_with('v') {
                     let v = t.split_whitespace().next().unwrap_or("").to_string();
                     if !v.is_empty() {
-                        versions.push(VersionEntry { name: v, current: t.contains("->") });
+                        versions.push(VersionEntry {
+                            name: v,
+                            current: t.contains("->"),
+                        });
                     }
                 }
             }
@@ -466,12 +1000,27 @@ pub fn list_node_versions() -> Vec<VersionEntry> {
 pub fn uninstall_node_version(version: &str) -> UninstallResult {
     let r = Command::new("bash")
         .arg("-c")
-        .arg(format!("source ~/.nvm/nvm.sh 2>/dev/null && nvm uninstall {}", version))
+        .arg(format!(
+            "source ~/.nvm/nvm.sh 2>/dev/null && nvm uninstall {}",
+            version
+        ))
         .output();
     match r {
-        Ok(o) if o.status.success() => UninstallResult { version: version.to_string(), status: "success".into(), message: String::new() },
-        Ok(o) => UninstallResult { version: version.to_string(), status: "failed".into(), message: String::from_utf8_lossy(&o.stderr).trim().to_string() },
-        Err(e) => UninstallResult { version: version.to_string(), status: "failed".into(), message: format!("{}", e) },
+        Ok(o) if o.status.success() => UninstallResult {
+            version: version.to_string(),
+            status: "success".into(),
+            message: String::new(),
+        },
+        Ok(o) => UninstallResult {
+            version: version.to_string(),
+            status: "failed".into(),
+            message: String::from_utf8_lossy(&o.stderr).trim().to_string(),
+        },
+        Err(e) => UninstallResult {
+            version: version.to_string(),
+            status: "failed".into(),
+            message: format!("{}", e),
+        },
     }
 }
 
@@ -483,7 +1032,10 @@ pub fn list_rust_toolchains() -> Vec<VersionEntry> {
         for line in s.lines() {
             let t = line.trim();
             if !t.is_empty() {
-                versions.push(VersionEntry { name: t.to_string(), current: t.contains("(default)") });
+                versions.push(VersionEntry {
+                    name: t.to_string(),
+                    current: t.contains("(default)"),
+                });
             }
         }
     }
@@ -492,23 +1044,37 @@ pub fn list_rust_toolchains() -> Vec<VersionEntry> {
 
 /// 卸载指定 Rust 工具链
 pub fn uninstall_rust_toolchain(name: &str) -> UninstallResult {
-    let r = Command::new("rustup").arg("toolchain").arg("remove").arg(name).arg("-y").output();
+    let r = Command::new("rustup")
+        .arg("toolchain")
+        .arg("remove")
+        .arg(name)
+        .arg("-y")
+        .output();
     match r {
-        Ok(o) if o.status.success() => UninstallResult { version: name.to_string(), status: "success".into(), message: String::new() },
-        Ok(o) => UninstallResult { version: name.to_string(), status: "failed".into(), message: String::from_utf8_lossy(&o.stderr).trim().to_string() },
-        Err(e) => UninstallResult { version: name.to_string(), status: "failed".into(), message: format!("{}", e) },
+        Ok(o) if o.status.success() => UninstallResult {
+            version: name.to_string(),
+            status: "success".into(),
+            message: String::new(),
+        },
+        Ok(o) => UninstallResult {
+            version: name.to_string(),
+            status: "failed".into(),
+            message: String::from_utf8_lossy(&o.stderr).trim().to_string(),
+        },
+        Err(e) => UninstallResult {
+            version: name.to_string(),
+            status: "failed".into(),
+            message: format!("{}", e),
+        },
     }
 }
 
-/// 检测某 IDE 是否正在运行（用于三级清理的安全锁）
-pub fn check_ide_in_use(path: &str) -> bool {
-    // 从路径提取 IDE 名称关键词，用 pgrep 检测进程
-    let key = path.trim_start_matches("~/.").to_string();
-    // 简单策略：路径所在目录名作为进程匹配关键词
-    let proc_name = std::path::Path::new(&key)
+/// 检测某 IDE 是否正在运行（用于三级清理的安全锁）。
+pub fn check_ide_in_use(name: &str) -> IdeUseStatus {
+    let key = name.trim_start_matches("~/.");
+    let process_name = Path::new(key)
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+        .and_then(|part| part.to_str())
         .unwrap_or(key);
-    let out = Command::new("pgrep").arg("-i").arg(&proc_name).output();
-    matches!(out, Ok(o) if o.status.success() && !o.stdout.is_empty())
+    process::check_ide_in_use(process_name)
 }

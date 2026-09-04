@@ -1,17 +1,11 @@
 mod cleanup;
 
 use cleanup::{
-    actions_by_tier, check_ide_in_use, diagnose, find_action, get_disk_usage, list_node_versions,
-    list_rust_toolchains, run_action, uninstall_node_version, uninstall_rust_toolchain, ActionResult,
-    CleanupAction, DiagnosisReport, DiskUsage, Tier, UninstallResult, VersionEntry,
+    ActionResult, CleanupAction, DiagnosisReport, DiskUsage, IdeUseStatus, RunActionRequest, Tier,
+    UninstallResult, VersionEntry, actions_by_tier, check_ide_in_use, diagnose, find_action,
+    get_disk_usage, list_node_versions, list_rust_toolchains, run_action, uninstall_node_version,
+    uninstall_rust_toolchain,
 };
-use tauri;
-
-#[derive(serde::Serialize)]
-struct InUseResult {
-    in_use: bool,
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -74,8 +68,8 @@ fn find_action_cmd(id: String) -> Option<CleanupAction> {
 }
 
 #[tauri::command]
-fn run_action_cmd(id: String) -> ActionResult {
-    run_action(&id)
+fn run_action_cmd(request: RunActionRequest) -> ActionResult {
+    run_action(&request)
 }
 
 #[tauri::command]
@@ -99,6 +93,6 @@ fn uninstall_rust_toolchain_cmd(toolchain: String) -> UninstallResult {
 }
 
 #[tauri::command]
-fn check_ide_in_use_cmd(path: String) -> InUseResult {
-    InUseResult { in_use: check_ide_in_use(&path) }
+fn check_ide_in_use_cmd(path: String) -> IdeUseStatus {
+    check_ide_in_use(&path)
 }
