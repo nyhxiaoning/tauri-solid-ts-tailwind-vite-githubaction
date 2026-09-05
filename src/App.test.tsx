@@ -5,6 +5,7 @@ import { setExcludedPaths } from './store'
 import {
   getDiskUsage,
   listActions,
+  listHistory,
   listNodeVersions,
   runAction,
   uninstallVersion,
@@ -15,9 +16,11 @@ import {
 
 vi.mock('./tauri', () => ({
   checkIdeInUse: vi.fn(),
+  clearHistory: vi.fn(),
   diagnose: vi.fn(),
   getDiskUsage: vi.fn(),
   listActions: vi.fn(),
+  listHistory: vi.fn(),
   listNodeVersions: vi.fn(),
   listRustToolchains: vi.fn(),
   runAction: vi.fn(),
@@ -73,6 +76,7 @@ describe('App cleanup result handling', () => {
     vi.clearAllMocks()
     setExcludedPaths([])
     vi.mocked(getDiskUsage).mockResolvedValue(disk)
+    vi.mocked(listHistory).mockResolvedValue([])
   })
 
   it('keeps the newest disk snapshot when an older refresh resolves last', async () => {
@@ -183,5 +187,19 @@ describe('App cleanup result handling', () => {
 
     await waitFor(() => expect(uninstallVersion).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(getDiskUsage).toHaveBeenCalledTimes(2))
+  })
+
+  it('opens the history and about views from their main-menu entries', async () => {
+    render(() => <App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /清理历史/ }))
+    expect(await screen.findByRole('heading', { name: '清理历史' })).toBeTruthy()
+    expect(listHistory).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '← 返回' }))
+    fireEvent.click(screen.getByRole('button', { name: /关于应用/ }))
+
+    expect(screen.getByRole('heading', { name: '关于' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'macOS Cleanup Hub' })).toBeTruthy()
   })
 })

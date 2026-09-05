@@ -25,10 +25,12 @@ export interface CleanupAction {
   run_commands: string[]
 }
 
+export type ActionStatus = 'success' | 'failed' | 'skipped'
+
 export interface ActionResult {
   id: string
   name: string
-  status: 'success' | 'failed' | 'skipped'
+  status: ActionStatus
   before_gb: number | null
   after_gb: number | null
   released_gb: number
@@ -48,7 +50,8 @@ export interface HistoryRecord {
   action_id: string
   action_name: string
   tier: Tier | null
-  status: ActionResult['status']
+  // Persisted records can come from an older or newer app version.
+  status: string
   before_gb: number | null
   after_gb: number | null
   released_gb: number

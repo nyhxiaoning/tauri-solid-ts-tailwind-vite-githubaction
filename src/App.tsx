@@ -1,5 +1,7 @@
 import { Component, createSignal, onMount, Show } from 'solid-js'
+import AboutView from './components/AboutView'
 import DiagView from './components/DiagView'
+import HistoryView from './components/HistoryView'
 import MenuGrid from './components/MenuGrid'
 import MenuView from './components/MenuView'
 import { RouterProvider, useView } from './components/Router'
@@ -86,6 +88,8 @@ const AppContent: Component = () => {
             onNavigate={t => setView({ tier: t })}
             onDiag={() => setView('diag')}
             onSettings={() => setView('settings')}
+            onHistory={() => setView('history')}
+            onAbout={() => setView('about')}
           />
         </Show>
 
@@ -97,6 +101,14 @@ const AppContent: Component = () => {
 
         <Show when={view() === 'settings'}>
           <SettingsView />
+        </Show>
+
+        <Show when={view() === 'history'}>
+          <HistoryView />
+        </Show>
+
+        <Show when={view() === 'about'}>
+          <AboutView />
         </Show>
 
         <footer class="mt-6 text-center text-xs text-gray-400">

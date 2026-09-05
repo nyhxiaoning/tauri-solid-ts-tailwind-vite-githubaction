@@ -12,7 +12,7 @@ interface MenuCardProps {
   onClick: () => void
 }
 
-const MenuCard: Component<MenuCardProps> = (props) => (
+const MenuCard: Component<MenuCardProps> = props => (
   <button
     type="button"
     onClick={props.onClick}
@@ -37,9 +37,11 @@ interface MenuGridProps {
   onNavigate: (tier: Tier) => void
   onDiag: () => void
   onSettings: () => void
+  onHistory: () => void
+  onAbout: () => void
 }
 
-const MenuGrid: Component<MenuGridProps> = (props) => (
+const MenuGrid: Component<MenuGridProps> = props => (
   <div class="grid grid-cols-2 gap-3">
     <MenuCard
       icon="🩺"
@@ -91,6 +93,24 @@ const MenuGrid: Component<MenuGridProps> = (props) => (
       </div>
       <div class="mt-2 text-base font-semibold text-gray-900">设置</div>
       <div class="mt-0.5 text-xs text-gray-500">目标线·排除列表·日志</div>
+    </button>
+    <button
+      type="button"
+      onClick={props.onHistory}
+      class="rounded-xl bg-white p-4 text-left shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-blue-200"
+    >
+      <div class="text-2xl">📜</div>
+      <div class="mt-2 text-base font-semibold text-gray-900">清理历史</div>
+      <div class="mt-0.5 text-xs text-gray-500">查看、筛选与导出执行记录</div>
+    </button>
+    <button
+      type="button"
+      onClick={props.onAbout}
+      class="rounded-xl bg-white p-4 text-left shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:ring-blue-200"
+    >
+      <div class="text-2xl">ℹ️</div>
+      <div class="mt-2 text-base font-semibold text-gray-900">关于应用</div>
+      <div class="mt-0.5 text-xs text-gray-500">版本、技术栈与安全边界</div>
     </button>
   </div>
 )
