@@ -3,7 +3,7 @@
 > 基于《macOS 存储清理指南》升级而来
 > 目标：将系统存储控制在 100GB 以下，解决卡顿与缓存堆积问题
 > 文档性质：产品设计需求规格（PRD），用于指导后续开发
-> 最后更新：2026-09-04
+> 最后更新：2026-09-06
 
 ---
 
@@ -422,14 +422,14 @@ P0 已完成并**编译运行通过**。覆盖范围：主菜单 + 四级菜单 
 | 模块 | 文件 | 说明 |
 |------|------|------|
 | 命令注册表 | `src-tauri/src/cleanup.rs` | 31 个清理动作全部结构化（ID/等级/风险/预估/扫描路径/执行命令） |
-| 磁盘诊断 | `src-tauri/src/cleanup.rs` | `df -k /` 解析 + `du` Top 排行 |
+| 磁盘诊断 | `src-tauri/src/cleanup.rs` | Home 所在数据卷的 `df -k` 解析 + `du` Top 排行 |
 | 执行引擎 | `src-tauri/src/cleanup.rs` | 清理前/后实时测量，释放空间精确到 0.1 GB |
 | 交互式命令 | `src-tauri/src/cleanup.rs` | NVM / Rustup 版本列表与卸载 |
 | IDE 在用检测 | `src-tauri/src/cleanup.rs` | `pgrep` 检测，三级清理安全锁 |
-| 路由 | `src/components/Router.tsx` | 4 个视图切换 |
+| 路由 | `src/components/Router.tsx` | 主菜单、三级菜单、诊断、设置、历史和关于视图切换 |
 | 状态栏 | `src/components/StatusBar.tsx` + `DiskOverview.tsx` | 磁盘总览、目标线警告、累计释放 |
 | 主菜单 | `src/components/MenuGrid.tsx` | 四级菜单卡片 |
-| 菜单视图 | `src/components/MenuView.tsx` | 勾选/全选/一键批量/反馈区 |
+| 菜单视图 | `src/components/MenuView.tsx` | 勾选/全选/批量汇总确认/停止/反馈区 |
 | 单个命令 | `src/components/ActionItem.tsx` + `ResultBadge.tsx` | 三级确认强度 + 实时反馈 |
 | 确认弹窗 | `src/components/ConfirmDialog.tsx` | simple/strong/strongest 三级 |
 | 交互式弹窗 | `src/components/InteractiveView.tsx` | NVM/Rustup 版本选择 |
@@ -449,11 +449,11 @@ P0 已完成并**编译运行通过**。覆盖范围：主菜单 + 四级菜单 
 2. **规避 `Show` 子回调的 accessor 歧义**：SolidJS `Show` 的子回调在运行时可能传入 accessor 函数而非原始值（与文档表述不一致，已读运行时源码确认）。全部改为「子组件 + 直接传值」模式，children 为元素而非函数，彻底规避歧义且保持响应式。`For` 经 `mapArray` 运行时确认传值，安全。
 3. **命令结构化**：所有清理动作为数据而非裸字符串，确认弹窗、风险标签、预估大小、实时反馈均可自动生成。
 
-### 11.4 待办（P1/P2/P3）
+### 11.4 P1/P2/P3 完成状态
 
-- [ ] P1：二级清理完整交互（NVM/Rustup 已实现 UI，待联调）
-- [ ] P2：三级清理 IDE 在用检测联动（`check_ide_in_use_cmd` 已就绪）
-- [ ] P3：批量执行汇总确认弹窗、日志查看器、关于页
+- [x] P1：二级清理完整交互，包括 NVM/Rustup 列表、当前版本保护、强确认、逐项卸载反馈和后端执行前复检。
+- [x] P2：三级清理 IDE 在用检测完成前后端联动，检测中、运行中或检测失败时均禁止执行，并在后端执行前再次检查。
+- [x] P3：批量执行汇总确认与停止、持久化历史查看器、关于页、导航入口和应用标题均已完成。
 
 ### 11.5 磁盘诊断修复记录（2026-09-04）
 
@@ -534,3 +534,82 @@ P0 已完成并**编译运行通过**。覆盖范围：主菜单 + 四级菜单 
 **效果**：输入框的 `el.value` 只被写入两次（onMount 首次、用户清空时回填），其余时间完全由浏览器管理，macOS 输入系统不再被异常唤醒，三连报错消失。同时保留提交后状态栏实时联动。
 
 **验证**：构建产物确认输入框无 `value` 属性（`<input type=text inputmode=numeric pattern=[0-9]* ...>`）；`tsc --noEmit` 零错误；`vite build` 通过。
+
+---
+
+## 十二、P1/P2/P3 完成报告（2026-09-06）
+
+P1、P2、P3 的代码实现和非破坏性验证已经完成。本报告中的“完成”表示功能契约已接入前后端并通过自动化或安全启动检查，不表示已经在开发机上批准真实删除，也不表示实测磁盘一定能降到 100 GB 以下。
+
+### 12.1 完成范围
+
+| 阶段 | 已完成内容 | 主要实现 |
+|------|------------|----------|
+| P1 | 二级普通清理、NVM/Rustup 版本选择与强确认 | 交互项不进入普通批量；NVM 当前版本与 Rustup 当前/默认工具链不可选；卸载前重新列出并校验；动态参数不拼入 shell 脚本 |
+| P2 | 三级 IDE 状态检测、输入名称确认和后端安全锁 | 进入菜单自动检测全部 IDE；支持手动刷新；运行中或检测失败时禁止选择和删除；执行前后端再次 `pgrep` |
+| P3 | 批量汇总确认、停止、持久化历史、关于页 | 批量显示名称/数量/预估空间；停止只阻止后续项；历史可筛选、刷新、导出和确认清空；关于页说明安全边界 |
+| 安全闭环 | 内置动作、类型化操作、排除路径和日志 | Rust 只接受注册 ID；清理路径固定；路径重叠保守跳过；拒绝危险路径和符号链接逃逸；每次结果立即写入 JSON |
+| 质量门禁 | 全仓前端 lint/format 收口 | 修复诊断与反馈组件的异步事件、错误类型和多余类型断言，并统一 Prettier 格式 |
+
+### 12.2 关键行为
+
+1. 一级确认值必须是后端规定的 `confirmed`；二级必须是 `rebuild-understood`；三级必须与 IDE 名称完整匹配（忽略首尾空格和大小写）。
+2. 排除路径只接受绝对路径或 `~/`，拒绝相对路径、`~user`、`..` 和符号链接路径。目标与排除项任一方向发生包含关系时，整个目标跳过。
+3. `RemoveTarget` 和 `RemoveContents` 使用 Rust 文件 API；Docker 与 Homebrew 只能执行注册表中的固定程序和参数，120 秒超时后终止。
+4. 批量确认只发生一次，但后端仍逐项验证每个动作。点击“停止”后，已开始项目执行完毕，未开始项目不再启动，已完成结果不回滚。
+5. NVM/Rustup 每个版本逐项反馈，执行结果也会写入历史。历史采用原子替换写入并最多保留最近 500 条。
+6. 清理历史位于 Tauri 应用数据目录下的 `cleanup-history.json`。当前 bundle identifier 对应的 macOS 常见路径为 `~/Library/Application Support/com.tauri-solid-ts-tailwind-vite.dev/cleanup-history.json`；目标线和排除列表保存在 WebView `localStorage`。
+
+### 12.3 NVM 列表故障修复
+
+**现象**：机器已经安装多个 NVM Node 版本，但版本选择窗口可能显示为空或报告读取失败。
+
+**根因**：旧实现依赖 `nvm ls --no-colors` 的退出状态。NVM 没有 `default` alias 等情况下，该命令可以输出已安装版本但仍返回非零状态，应用因此把整个列表误判为失败；`NVM_DIR` 指向已迁移的旧目录也会造成同类问题。
+
+**修复**：
+
+1. 直接读取 `$NVM_DIR/versions/node/vX.Y.Z`，不再用 `nvm ls` 的整体退出码判断“是否安装版本”。
+2. `$NVM_DIR` 不可用时回退检查 `~/.nvm`，并明确报告所有检查过的位置。
+3. 仍通过 `nvm current` 标记当前版本；即使 `nvm.sh` 初始化尾部返回非零，只要 `nvm` 已成功加载即可继续。
+4. 卸载前重新读取磁盘目录和当前版本，拒绝过期选择；版本只作为位置参数传入已固定的 shell 脚本。
+
+对应回归测试覆盖无 `default` alias、失效的 `NVM_DIR`、初始化返回非零、过期选择、当前版本保护和 shell 字符拒绝。
+
+### 12.4 自动化验证结果
+
+在 2026-09-06 的当前 checkout 上执行：
+
+| 命令 | 结果 |
+|------|------|
+| `cd src-tauri && cargo test` | ✅ 51 个 Rust 测试通过，0 失败（含 lib、main、doc 三个测试套件） |
+| `pnpm test` | ✅ 10 个测试文件、47 个前端测试通过，0 失败 |
+| `pnpm exec tsc --noEmit` | ✅ 通过，0 个类型错误 |
+| `pnpm eslint` | ✅ `src` 全量检查通过，0 个错误 |
+| `pnpm prettier` | ✅ `src` 全量格式检查通过 |
+| `pnpm build` | ✅ Vite 7.3.2 构建通过，30 个模块完成转换 |
+| `pnpm tauri info` | ✅ 环境信息读取完成；Command Line Tools、Rust、Node 和 pnpm 可用；同时记录完整 Xcode 未安装 |
+| `pnpm tauri build --debug --no-bundle` | ✅ debug 可执行文件构建通过，产物为 `src-tauri/target/debug/app` |
+
+测试没有调用真实用户目录的删除路径。Rust 测试使用临时目录、假命令执行器和受控的缺失目标；SolidJS 测试模拟 Tauri invoke，覆盖确认、选择、批量停止、排除列表传递、NVM/Rustup 流程、IDE 状态、历史页、关于页和主导航。
+
+### 12.5 桌面启动检查与边界
+
+直接运行 `pnpm dev:tauri` 时发现 1420 端口已经被同一 checkout 的现有 Vite/Tauri 开发进程占用，因此没有终止不属于本次验证的进程。随后使用仅覆盖开发 URL 的临时配置在 1421 端口启动：
+
+```bash
+pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:1421","beforeDevCommand":"pnpm vite dev --port 1421"}}'
+```
+
+安全启动证据：Vite 在 872 ms 后 ready；Rust dev profile 在 30.41 s 后显示 `Finished`；随后出现 `Running target/debug/app` 和 Tauri Devtools 初始化地址。继续观察 5 秒未出现新错误后，用 `Ctrl-C` 终止本次 1421 端口进程；期间没有点击确认按钮，也没有发起任何清理。
+
+本轮执行环境没有桌面控制能力，因此**没有**把人工点击一级、二级、三级、设置、历史、关于页写成已完成的手工验收。导航和交互闭环由组件测试覆盖，桌面层只确认编译、Vite 服务、应用进程和 Devtools 能启动。
+
+### 12.6 尚未做的破坏性验收
+
+- 未对真实 npm、Cargo、Gradle、IDE 或其他用户目录执行删除。
+- 未实际卸载本机 NVM Node 版本或 Rustup 工具链。
+- 未运行 Docker prune 或 Homebrew cleanup。
+- 未测量真实清理动作是否能在 1 秒内刷新反馈。
+- 未验证执行所有级别后磁盘占用能降到 100 GB 以下；可释放量仍是动作注册表中的估算，实际结果取决于机器内容。
+
+这些限制是为了遵守“自动化测试不得删除真实用户数据”的安全边界，不影响 P1/P2/P3 功能实现完成的结论。
