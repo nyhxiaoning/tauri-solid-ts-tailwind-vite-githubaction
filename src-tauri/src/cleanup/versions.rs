@@ -1,17 +1,15 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
-const NVM_LIST_SCRIPT: &str =
-    "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; source \"$NVM_DIR/nvm.sh\" && nvm ls --no-colors";
-const NVM_CURRENT_SCRIPT: &str =
-    "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; source \"$NVM_DIR/nvm.sh\" && nvm current";
-const NVM_UNINSTALL_SCRIPT: &str =
-    "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; source \"$NVM_DIR/nvm.sh\" && nvm uninstall \"$1\"";
+const NVM_CURRENT_SCRIPT: &str = "export NVM_DIR=\"$1\"; source \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 || { printf 'NVM 加载失败：%s\\n' \"$NVM_DIR/nvm.sh\" >&2; exit 127; }; nvm current";
+const NVM_UNINSTALL_SCRIPT: &str = "export NVM_DIR=\"$1\"; source \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 || { printf 'NVM 加载失败：%s\\n' \"$NVM_DIR/nvm.sh\" >&2; exit 127; }; nvm uninstall \"$2\"";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -124,17 +122,6 @@ impl VersionCommandRunner for SystemVersionCommandRunner {
     }
 }
 
-fn parse_nvm_line(line: &str) -> Option<VersionEntry> {
-    let current = line.trim_start().starts_with("->");
-    let name = line
-        .split_whitespace()
-        .find(|part| valid_nvm_version(part))?;
-    Some(VersionEntry {
-        name: name.to_string(),
-        current,
-    })
-}
-
 fn parse_rustup_line(line: &str) -> Option<VersionEntry> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -171,29 +158,96 @@ fn validate_selected_version(version: &str, entries: &[VersionEntry]) -> Result<
     }
 }
 
-fn nvm_shell_args(script: &str) -> Vec<String> {
-    vec!["-lc".into(), script.into()]
+fn discover_nvm_dir_from(
+    configured_dir: Option<&Path>,
+    home_dir: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Some(path) = configured_dir {
+        candidates.push(path.to_path_buf());
+    }
+    if let Some(home) = home_dir {
+        let default = home.join(".nvm");
+        if !candidates.contains(&default) {
+            candidates.push(default);
+        }
+    }
+    if let Some(path) = candidates.iter().find(|path| path.join("nvm.sh").is_file()) {
+        return Ok(path.clone());
+    }
+    let checked = candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("、");
+    if checked.is_empty() {
+        Err("未找到 NVM 安装目录：NVM_DIR 与 HOME 均未设置".into())
+    } else {
+        Err(format!("未找到 NVM 安装目录（已检查：{checked}）"))
+    }
 }
 
-fn list_node_versions_with_runner(
+fn discover_nvm_dir() -> Result<PathBuf, String> {
+    let configured = std::env::var_os("NVM_DIR").map(PathBuf::from);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    discover_nvm_dir_from(configured.as_deref(), home.as_deref())
+}
+
+fn list_node_versions_at(
+    nvm_dir: &Path,
     runner: &mut impl VersionCommandRunner,
 ) -> Result<Vec<VersionEntry>, String> {
-    let listed = runner.output("bash", &nvm_shell_args(NVM_LIST_SCRIPT), COMMAND_TIMEOUT)?;
-    if !listed.success {
-        return Err(non_empty_error(listed.stderr, "NVM 版本读取失败"));
-    }
-    let active = runner.output("bash", &nvm_shell_args(NVM_CURRENT_SCRIPT), COMMAND_TIMEOUT)?;
+    let versions_dir = nvm_dir.join("versions/node");
+    let mut entries = match fs::read_dir(&versions_dir) {
+        Ok(children) => children
+            .filter_map(|child| child.ok())
+            .filter_map(|child| {
+                let name = child.file_name().to_string_lossy().into_owned();
+                match child.file_type() {
+                    Ok(file_type) if file_type.is_dir() && valid_nvm_version(&name) => {
+                        Some(VersionEntry {
+                            name,
+                            current: false,
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => {
+            return Err(format!(
+                "读取 NVM Node 版本目录 {} 失败：{error}",
+                versions_dir.display()
+            ));
+        }
+    };
+    let active = runner.output(
+        "bash",
+        &[
+            "-lc".into(),
+            NVM_CURRENT_SCRIPT.into(),
+            "cleanup-hub".into(),
+            nvm_dir.to_string_lossy().into_owned(),
+        ],
+        COMMAND_TIMEOUT,
+    )?;
     if !active.success {
         return Err(non_empty_error(active.stderr, "NVM 当前版本读取失败"));
     }
     let active_name = active.stdout.trim();
-    let mut entries: Vec<_> = listed.stdout.lines().filter_map(parse_nvm_line).collect();
     for entry in &mut entries {
         entry.current = entry.name == active_name;
     }
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     entries.dedup_by(|left, right| left.name == right.name);
     Ok(entries)
+}
+
+fn list_node_versions_with_runner(
+    runner: &mut impl VersionCommandRunner,
+) -> Result<Vec<VersionEntry>, String> {
+    list_node_versions_at(&discover_nvm_dir()?, runner)
 }
 
 fn list_rust_toolchains_with_runner(
@@ -226,14 +280,34 @@ fn uninstall_version_with_runner(
     request: &UninstallVersionRequest,
     runner: &mut impl VersionCommandRunner,
 ) -> UninstallResult {
+    uninstall_version_with_runner_at(request, runner, None)
+}
+
+fn uninstall_version_with_runner_at(
+    request: &UninstallVersionRequest,
+    runner: &mut impl VersionCommandRunner,
+    configured_nvm_dir: Option<&Path>,
+) -> UninstallResult {
     if request.acknowledgement != "rebuild-understood" {
         return failed(&request.version, "未确认重建影响");
     }
     if request.kind == VersionKind::Nvm && !valid_nvm_version(&request.version) {
         return failed(&request.version, "Node 版本格式无效");
     }
+    let nvm_dir = if request.kind == VersionKind::Nvm {
+        match configured_nvm_dir
+            .map(Path::to_path_buf)
+            .map(Ok)
+            .unwrap_or_else(discover_nvm_dir)
+        {
+            Ok(path) => Some(path),
+            Err(error) => return failed(&request.version, &error),
+        }
+    } else {
+        None
+    };
     let entries = match request.kind {
-        VersionKind::Nvm => list_node_versions_with_runner(runner),
+        VersionKind::Nvm => list_node_versions_at(nvm_dir.as_deref().unwrap(), runner),
         VersionKind::Rustup => list_rust_toolchains_with_runner(runner),
     };
     if let Err(error) =
@@ -248,6 +322,7 @@ fn uninstall_version_with_runner(
                 "-lc".into(),
                 NVM_UNINSTALL_SCRIPT.into(),
                 "cleanup-hub".into(),
+                nvm_dir.as_deref().unwrap().to_string_lossy().into_owned(),
                 request.version.clone(),
             ],
             COMMAND_TIMEOUT,
@@ -300,6 +375,7 @@ pub fn uninstall_version(request: &UninstallVersionRequest) -> UninstallResult {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use tempfile::TempDir;
 
     struct FakeRunner {
         outputs: VecDeque<Result<CommandOutput, String>>,
@@ -318,6 +394,17 @@ mod tests {
         }
     }
 
+    fn nvm_fixture(versions: &[&str]) -> (TempDir, PathBuf) {
+        let temp = tempfile::tempdir().unwrap();
+        let nvm_dir = temp.path().join(".nvm");
+        std::fs::create_dir_all(nvm_dir.join("versions/node")).unwrap();
+        std::fs::write(nvm_dir.join("nvm.sh"), "# test fixture").unwrap();
+        for version in versions {
+            std::fs::create_dir(nvm_dir.join("versions/node").join(version)).unwrap();
+        }
+        (temp, nvm_dir)
+    }
+
     #[test]
     fn public_listing_interfaces_propagate_command_failures() {
         let _nvm: fn() -> Result<Vec<VersionEntry>, String> = list_node_versions;
@@ -325,14 +412,72 @@ mod tests {
     }
 
     #[test]
-    fn parsers_return_raw_uninstall_arguments_and_protect_active_versions() {
+    fn nvm_listing_reads_installed_versions_from_disk_without_running_nvm_ls() {
+        let temp = tempfile::tempdir().unwrap();
+        let nvm_dir = temp.path().join(".nvm");
+        for name in ["v25.8.0", "v16.10.0", "not-a-version"] {
+            std::fs::create_dir_all(nvm_dir.join("versions/node").join(name)).unwrap();
+        }
+        let mut runner = FakeRunner {
+            outputs: VecDeque::from([Ok(CommandOutput::success("system\n"))]),
+            calls: vec![],
+        };
+
+        let versions = list_node_versions_at(&nvm_dir, &mut runner).unwrap();
+
         assert_eq!(
-            parse_nvm_line("->     v22.14.0"),
-            Some(VersionEntry {
-                name: "v22.14.0".into(),
-                current: true,
-            })
+            versions,
+            vec![
+                VersionEntry {
+                    name: "v16.10.0".into(),
+                    current: false,
+                },
+                VersionEntry {
+                    name: "v25.8.0".into(),
+                    current: false,
+                },
+            ]
         );
+        assert_eq!(runner.calls.len(), 1);
+        assert!(runner.calls[0].1[1].contains("nvm current"));
+    }
+
+    #[test]
+    fn nvm_directory_discovery_falls_back_from_a_stale_override_to_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let stale_override = temp.path().join("old-nvm-location");
+        let home = temp.path().join("home");
+        let home_nvm = home.join(".nvm");
+        std::fs::create_dir_all(&home_nvm).unwrap();
+        std::fs::write(home_nvm.join("nvm.sh"), "# fixture").unwrap();
+
+        let discovered = discover_nvm_dir_from(Some(&stale_override), Some(&home)).unwrap();
+
+        assert_eq!(discovered, home_nvm);
+    }
+
+    #[test]
+    fn nvm_listing_continues_when_nvm_initialization_returns_nonzero_but_loads_nvm() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.17.0"]);
+        std::fs::write(
+            nvm_dir.join("nvm.sh"),
+            "nvm() { [ \"$1\" = current ] && printf 'system\\n'; }\nreturn 3\n",
+        )
+        .unwrap();
+
+        let versions = list_node_versions_at(&nvm_dir, &mut SystemVersionCommandRunner).unwrap();
+
+        assert_eq!(
+            versions,
+            vec![VersionEntry {
+                name: "v18.17.0".into(),
+                current: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn rustup_parser_returns_raw_uninstall_arguments_and_protects_active_versions() {
         assert_eq!(
             parse_rustup_line("stable-aarch64-apple-darwin (default)"),
             Some(VersionEntry {
@@ -349,11 +494,9 @@ mod tests {
 
     #[test]
     fn uninstall_rejects_a_stale_nvm_selection_after_relisting() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v20.19.0"]);
         let mut runner = FakeRunner {
-            outputs: VecDeque::from([
-                Ok(CommandOutput::success("v20.19.0\n")),
-                Ok(CommandOutput::success("v20.19.0\n")),
-            ]),
+            outputs: VecDeque::from([Ok(CommandOutput::success("v20.19.0\n"))]),
             calls: vec![],
         };
         let request = UninstallVersionRequest {
@@ -362,18 +505,18 @@ mod tests {
             acknowledgement: "rebuild-understood".into(),
         };
 
-        let result = uninstall_version_with_runner(&request, &mut runner);
+        let result = uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
 
         assert_eq!(result.status, "failed");
         assert!(result.message.contains("已不存在"));
-        assert_eq!(runner.calls.len(), 2, "no uninstall command should run");
+        assert_eq!(runner.calls.len(), 1, "no uninstall command should run");
     }
 
     #[test]
     fn nvm_uninstall_passes_a_validated_version_as_a_positional_argument() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v20.19.0"]);
         let mut runner = FakeRunner {
             outputs: VecDeque::from([
-                Ok(CommandOutput::success("v18.20.0\nv20.19.0\n")),
                 Ok(CommandOutput::success("v20.19.0\n")),
                 Ok(CommandOutput::success("Uninstalled node v18.20.0\n")),
             ]),
@@ -385,16 +528,17 @@ mod tests {
             acknowledgement: "rebuild-understood".into(),
         };
 
-        let result = uninstall_version_with_runner(&request, &mut runner);
+        let result = uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
 
         assert_eq!(result.status, "success");
-        assert_eq!(runner.calls.len(), 3);
-        assert_eq!(runner.calls[2].0, "bash");
-        assert_eq!(runner.calls[2].1[0], "-lc");
-        assert!(runner.calls[2].1[1].contains("nvm uninstall \"$1\""));
-        assert_eq!(runner.calls[2].1[2], "cleanup-hub");
-        assert_eq!(runner.calls[2].1[3], "v18.20.0");
-        assert!(!runner.calls[2].1[1].contains("v18.20.0"));
+        assert_eq!(runner.calls.len(), 2);
+        assert_eq!(runner.calls[1].0, "bash");
+        assert_eq!(runner.calls[1].1[0], "-lc");
+        assert!(runner.calls[1].1[1].contains("nvm uninstall \"$2\""));
+        assert_eq!(runner.calls[1].1[2], "cleanup-hub");
+        assert_eq!(runner.calls[1].1[3], nvm_dir.to_string_lossy());
+        assert_eq!(runner.calls[1].1[4], "v18.20.0");
+        assert!(!runner.calls[1].1[1].contains("v18.20.0"));
     }
 
     #[test]
@@ -452,9 +596,9 @@ mod tests {
 
     #[test]
     fn every_version_command_uses_the_bounded_timeout() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v22.14.0"]);
         let mut runner = FakeRunner {
             outputs: VecDeque::from([
-                Ok(CommandOutput::success("v18.20.0\nv22.14.0\n")),
                 Ok(CommandOutput::success("v22.14.0\n")),
                 Ok(CommandOutput::success("")),
             ]),
@@ -466,7 +610,7 @@ mod tests {
             acknowledgement: "rebuild-understood".into(),
         };
 
-        uninstall_version_with_runner(&request, &mut runner);
+        uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
 
         assert!(
             runner
