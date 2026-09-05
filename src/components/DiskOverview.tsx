@@ -1,17 +1,21 @@
 import { Component, Show } from 'solid-js'
-import type { DiskUsage } from '../tauri'
 import { diskTargetGb } from '../store'
+import type { DiskUsage } from '../tauri'
 
 const fmt = (gb: number) => gb.toFixed(1)
 
-const DiskOverview: Component<{ disk: DiskUsage }> = (props) => {
+const DiskOverview: Component<{ disk: DiskUsage }> = props => {
   return (
     <>
       <div class="mb-1 flex items-center justify-between text-xs">
         <span class="text-gray-600">
           已用 {fmt(props.disk.used_gb)} GB / 总量 {fmt(props.disk.total_gb)} GB
         </span>
-        <span class={props.disk.usage_pct >= 85 ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+        <span
+          class={
+            props.disk.usage_pct >= 85 ? 'text-red-600 font-semibold' : 'text-gray-500'
+          }
+        >
           {props.disk.usage_pct}%
         </span>
       </div>
@@ -29,7 +33,10 @@ const DiskOverview: Component<{ disk: DiskUsage }> = (props) => {
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span class="text-gray-500">
-          可用 <span class="font-semibold text-gray-700">{fmt(props.disk.available_gb)} GB</span>
+          可用{' '}
+          <span class="font-semibold text-gray-700">
+            {fmt(props.disk.available_gb)} GB
+          </span>
         </span>
         <span class="text-gray-400">|</span>
         <span class="text-gray-500">

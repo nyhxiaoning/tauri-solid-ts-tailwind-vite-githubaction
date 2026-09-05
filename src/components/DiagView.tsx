@@ -1,9 +1,8 @@
 import { Component, createSignal, onMount, Show } from 'solid-js'
-import type { DiagnosisReport } from '../tauri'
-import { diagnose } from '../tauri'
 import { diskTargetGb } from '../store'
-import { useNavigate } from './Router'
+import { diagnose, type DiagnosisReport } from '../tauri'
 import DiagReport from './DiagReport'
+import { useNavigate } from './Router'
 
 const DiagView: Component = () => {
   const nav = useNavigate()
@@ -17,14 +16,23 @@ const DiagView: Component = () => {
     try {
       const r = await diagnose()
       setReport(r)
-    } catch (e: any) {
-      setError(String(e))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : typeof e === 'string' ? e : '诊断失败')
     } finally {
       setLoading(false)
     }
   }
 
-  onMount(load)
+  onMount(() => {
+    void load()
+  })
+
+  const ReportSection: Component = () => {
+    const currentReport = report()
+    return currentReport ? (
+      <DiagReport report={currentReport} onExport={exportReport} />
+    ) : null
+  }
 
   const exportReport = () => {
     const r = report()
@@ -42,7 +50,7 @@ const DiagView: Component = () => {
       ...r.top_app_support.map(([n, s]) => `${s.toFixed(2).padStart(10)} GB  ${n}`),
       '',
       '--- 用户目录排行 (~/) ---',
-      ...r.top_home.map(([n, s]) => `${s.toFixed(2).padStart(10)} GB  ${n}`),
+      ...r.top_home.map(([n, s]) => `${s.toFixed(2).padStart(10)} GB  ${n}`)
     ]
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -71,7 +79,7 @@ const DiagView: Component = () => {
         </div>
         <button
           type="button"
-          onClick={load}
+          onClick={() => void load()}
           disabled={loading()}
           class="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
         >
@@ -83,9 +91,7 @@ const DiagView: Component = () => {
         <div class="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error()}</div>
       </Show>
 
-      <Show when={report()}>
-        <DiagReport report={report()!} onExport={exportReport} />
-      </Show>
+      <ReportSection />
     </div>
   )
 }

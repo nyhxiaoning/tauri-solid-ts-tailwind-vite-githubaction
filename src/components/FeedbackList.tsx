@@ -6,25 +6,41 @@ interface FeedbackToastProps {
   onDismiss: () => void
 }
 
-const FeedbackToast: Component<FeedbackToastProps> = (props) => {
+const FeedbackToast: Component<FeedbackToastProps> = props => {
   const isFailed = props.action.status === 'failed'
   const isSkipped = props.action.status === 'skipped'
   const isError = isFailed || isSkipped
 
-  const border = isFailed ? 'border-red-300' : isSkipped ? 'border-amber-300' : 'border-emerald-200'
+  const border = isFailed
+    ? 'border-red-300'
+    : isSkipped
+      ? 'border-amber-300'
+      : 'border-emerald-200'
   const icon = isFailed ? '✗' : isSkipped ? '⊘' : '✓'
-  const iconBg = isFailed ? 'bg-red-100 text-red-600' : isSkipped ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+  const iconBg = isFailed
+    ? 'bg-red-100 text-red-600'
+    : isSkipped
+      ? 'bg-amber-100 text-amber-600'
+      : 'bg-emerald-100 text-emerald-600'
 
   return (
     <div class={`rounded-lg border ${border} bg-white p-3 shadow-sm`}>
       <div class="flex items-start gap-2">
-        <span class={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${iconBg}`}>
+        <span
+          class={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${iconBg}`}
+        >
           {icon}
         </span>
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
-            <span class="truncate text-sm font-semibold text-gray-800">{props.action.name}</span>
-            <button type="button" onClick={props.onDismiss} class="text-gray-400 hover:text-gray-600">
+            <span class="truncate text-sm font-semibold text-gray-800">
+              {props.action.name}
+            </span>
+            <button
+              type="button"
+              onClick={props.onDismiss}
+              class="text-gray-400 hover:text-gray-600"
+            >
               ✕
             </button>
           </div>
@@ -32,12 +48,18 @@ const FeedbackToast: Component<FeedbackToastProps> = (props) => {
             <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
               <Show when={props.action.before_gb !== null}>
                 <span class="text-gray-500">
-                  清理前 <span class="font-semibold text-gray-700">{props.action.before_gb!.toFixed(1)} GB</span>
+                  清理前{' '}
+                  <span class="font-semibold text-gray-700">
+                    {props.action.before_gb.toFixed(1)} GB
+                  </span>
                 </span>
               </Show>
               <Show when={props.action.after_gb !== null}>
                 <span class="text-gray-500">
-                  清理后 <span class="font-semibold text-gray-700">{props.action.after_gb!.toFixed(1)} GB</span>
+                  清理后{' '}
+                  <span class="font-semibold text-gray-700">
+                    {props.action.after_gb.toFixed(1)} GB
+                  </span>
                 </span>
               </Show>
               <span class="font-bold text-emerald-600">
@@ -64,9 +86,11 @@ interface FeedbackListProps {
   onDismiss: (id: string) => void
 }
 
-const FeedbackList: Component<FeedbackListProps> = (props) => (
+const FeedbackList: Component<FeedbackListProps> = props => (
   <div class="space-y-2">
-    <For each={props.items}>{(item) => <FeedbackToast action={item} onDismiss={() => props.onDismiss(item.id)} />}</For>
+    <For each={props.items}>
+      {item => <FeedbackToast action={item} onDismiss={() => props.onDismiss(item.id)} />}
+    </For>
   </div>
 )
 
