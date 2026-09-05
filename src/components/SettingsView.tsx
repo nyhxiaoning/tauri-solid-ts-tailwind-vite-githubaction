@@ -1,10 +1,9 @@
-import { Component, createSignal, onMount, For, Show } from 'solid-js'
+import { Component, createSignal, For, onMount, Show } from 'solid-js'
+import { diskTargetGb, excludedPaths, setDiskTargetGb, setExcludedPaths } from '../store'
 import { useNavigate } from './Router'
-import { diskTargetGb, setDiskTargetGb } from '../store'
 
 const SettingsView: Component = () => {
   const nav = useNavigate()
-  const [excludes, setExcludes] = createSignal<string[]>([])
   const [newPath, setNewPath] = createSignal('')
   const [saved, setSaved] = createSignal(false)
   // 目标线：用完全非受控输入（ref + onMount 设初始值），SolidJS 绝不程序化写 el.value，
@@ -28,16 +27,8 @@ const SettingsView: Component = () => {
     setTimeout(() => setSaved(false), 1500)
   }
 
-  onMount(() => {
-    try {
-      const raw = localStorage.getItem('cleanup-excludes')
-      if (raw) setExcludes(JSON.parse(raw))
-    } catch {}
-  })
-
   const persist = (list: string[]) => {
-    setExcludes(list)
-    try { localStorage.setItem('cleanup-excludes', JSON.stringify(list)) } catch {}
+    setExcludedPaths(list)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
@@ -45,12 +36,12 @@ const SettingsView: Component = () => {
   const addExclude = () => {
     const p = newPath().trim()
     if (!p) return
-    persist([...excludes(), p])
+    persist([...excludedPaths(), p])
     setNewPath('')
   }
 
   const removeExclude = (i: number) => {
-    persist(excludes().filter((_, idx) => idx !== i))
+    persist(excludedPaths().filter((_, idx) => idx !== i))
   }
 
   const exportLog = () => {
@@ -59,9 +50,9 @@ const SettingsView: Component = () => {
       `导出时间: ${new Date().toLocaleString('zh-CN')}`,
       `目标磁盘线: ${diskTargetGb()} GB`,
       `排除列表:`,
-      ...excludes().map((p) => `  - ${p}`),
+      ...excludedPaths().map(p => `  - ${p}`),
       '',
-      '注意：排除列表仅在执行清理时生效，不会删除列表外的任何路径。',
+      '注意：排除列表仅在执行清理时生效，不会删除列表外的任何路径。'
     ]
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -104,8 +95,10 @@ const SettingsView: Component = () => {
               pattern="[0-9]*"
               spellcheck={false}
               autocorrect="off"
-              ref={(el) => (inputEl = el)}
-              onKeyDown={(e) => { if (e.key === 'Enter') commitTarget() }}
+              ref={el => (inputEl = el)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') commitTarget()
+              }}
               onBlur={commitTarget}
               class="w-24 px-3 py-1.5 text-sm font-bold text-gray-900 focus:outline-none"
             />
@@ -120,7 +113,9 @@ const SettingsView: Component = () => {
           </button>
           <span class="text-sm text-gray-600">时显示警告</span>
         </div>
-        <p class="mt-2 text-xs text-gray-400">范围 1–2000 GB，回车、失去焦点或点击「应用」后生效并自动保存。</p>
+        <p class="mt-2 text-xs text-gray-400">
+          范围 1–2000 GB，回车、失去焦点或点击「应用」后生效并自动保存。
+        </p>
       </div>
 
       <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5">
@@ -132,8 +127,10 @@ const SettingsView: Component = () => {
           <input
             type="text"
             value={newPath()}
-            onInput={(e) => setNewPath(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') addExclude() }}
+            onInput={e => setNewPath(e.currentTarget.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') addExclude()
+            }}
             placeholder="例如：~/Documents/重要项目"
             class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
           />
@@ -145,16 +142,22 @@ const SettingsView: Component = () => {
             添加
           </button>
         </div>
-        <Show when={excludes().length > 0}>
+        <Show when={excludedPaths().length > 0}>
           <div class="mt-3 space-y-1">
-            <For each={excludes()}>{(p, i) => (
-              <div class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
-                <span class="font-mono text-xs text-gray-700">{p}</span>
-                <button type="button" onClick={() => removeExclude(i())} class="ml-auto text-xs text-red-500 hover:text-red-700">
-                  删除
-                </button>
-              </div>
-            )}</For>
+            <For each={excludedPaths()}>
+              {(p, i) => (
+                <div class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                  <span class="font-mono text-xs text-gray-700">{p}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeExclude(i())}
+                    class="ml-auto text-xs text-red-500 hover:text-red-700"
+                  >
+                    删除
+                  </button>
+                </div>
+              )}
+            </For>
           </div>
         </Show>
       </div>
@@ -172,7 +175,9 @@ const SettingsView: Component = () => {
       </div>
 
       <Show when={saved()}>
-        <div class="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">✓ 已保存</div>
+        <div class="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          ✓ 已保存
+        </div>
       </Show>
     </div>
   )

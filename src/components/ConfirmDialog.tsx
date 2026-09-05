@@ -1,4 +1,5 @@
-import { Component, Show, createSignal } from 'solid-js'
+import { Component, createSignal, createUniqueId, Show } from 'solid-js'
+import { confirmationMatches } from '../cleanup-ui'
 
 export type ConfirmIntensity = 'simple' | 'strong' | 'strongest'
 
@@ -10,11 +11,13 @@ interface ConfirmDialogProps {
   intensity: ConfirmIntensity
   confirmLabel?: string
   placeholder?: string
+  expectedInput?: string
   onConfirm: (input?: string) => void
   onCancel: () => void
 }
 
-const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
+const ConfirmDialog: Component<ConfirmDialogProps> = props => {
+  const titleId = createUniqueId()
   const [input, setInput] = createSignal('')
   const [checked, setChecked] = createSignal(false)
 
@@ -25,7 +28,11 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
   }
 
   const canConfirm = () => {
-    if (props.intensity === 'strongest') return input().trim() !== ''
+    if (props.intensity === 'strongest') {
+      return props.expectedInput === undefined
+        ? input().trim() !== ''
+        : confirmationMatches(props.expectedInput, input())
+    }
     if (props.intensity === 'strong') return checked()
     return true
   }
@@ -33,8 +40,15 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
   return (
     <Show when={props.open}>
       <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-          <h3 class="mb-2 text-lg font-semibold text-gray-900">{props.title}</h3>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+        >
+          <h3 id={titleId} class="mb-2 text-lg font-semibold text-gray-900">
+            {props.title}
+          </h3>
           <p class="mb-1 text-sm text-gray-700">{props.message}</p>
           <Show when={props.detail}>
             <p class="mb-3 text-xs text-gray-500">{props.detail}</p>
@@ -43,8 +57,13 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
           <Show when={props.intensity === 'strongest'}>
             <input
               type="text"
+              aria-label={
+                props.expectedInput
+                  ? `输入 ${props.expectedInput} 以确认`
+                  : '输入名称以确认'
+              }
               value={input()}
-              onInput={(e) => setInput(e.currentTarget.value)}
+              onInput={e => setInput(e.currentTarget.value)}
               placeholder={props.placeholder || '输入名称以确认'}
               class="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             />
@@ -55,7 +74,7 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
               <input
                 type="checkbox"
                 checked={checked()}
-                onChange={(e) => setChecked(e.currentTarget.checked)}
+                onChange={e => setChecked(e.currentTarget.checked)}
                 class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-200"
               />
               <span>我已了解此操作需要重建索引/缓存，确认执行</span>
@@ -65,7 +84,10 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
           <div class="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => { reset(); props.onCancel() }}
+              onClick={() => {
+                reset()
+                props.onCancel()
+              }}
               class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
               取消
@@ -73,7 +95,11 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
             <button
               type="button"
               disabled={!canConfirm()}
-              onClick={() => { const v = props.intensity === 'strongest' ? input().trim() : undefined; reset(); props.onConfirm(v) }}
+              onClick={() => {
+                const v = props.intensity === 'strongest' ? input().trim() : undefined
+                reset()
+                props.onConfirm(v)
+              }}
               class={`rounded-lg px-4 py-2 text-sm font-medium text-white transition ${
                 canConfirm()
                   ? 'bg-red-600 hover:bg-red-700'

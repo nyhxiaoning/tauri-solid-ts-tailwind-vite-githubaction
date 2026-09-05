@@ -1,74 +1,125 @@
-import { Component, Show, createSignal } from 'solid-js'
-import type { CleanupAction, ActionResult, Risk } from '../tauri'
-import { checkIdeInUse } from '../tauri'
+import { Component, createSignal, Show } from 'solid-js'
+import {
+  type ActionResult,
+  type CleanupAction,
+  type IdeUseResult,
+  type Risk
+} from '../tauri'
 import ConfirmDialog, { ConfirmIntensity } from './ConfirmDialog'
 import ResultBadge from './ResultBadge'
 
+export type IdeDisplayStatus = IdeUseResult | { status: 'checking'; message?: string }
+
 interface ActionItemProps {
   action: CleanupAction
-  onRun: (id: string) => void
-  onResult: (result: ActionResult) => void
+  onRun: (id: string, acknowledgement: string) => void
+  onInteractive: (id: string) => void
+  selected: boolean
+  disabled?: boolean
+  ideStatus?: IdeDisplayStatus
+  onSelectedChange: (id: string) => void
   result: ActionResult | null
   running: boolean
 }
 
-const riskConfig: Record<Risk, { label: string; color: string; intensity: ConfirmIntensity }> = {
-  Zero: { label: '零风险', color: 'bg-emerald-100 text-emerald-700', intensity: 'simple' },
+const riskConfig: Record<
+  Risk,
+  { label: string; color: string; intensity: ConfirmIntensity }
+> = {
+  Zero: {
+    label: '零风险',
+    color: 'bg-emerald-100 text-emerald-700',
+    intensity: 'simple'
+  },
   Low: { label: '低风险', color: 'bg-amber-100 text-amber-700', intensity: 'strong' },
-  Medium: { label: '中风险', color: 'bg-red-100 text-red-700', intensity: 'strongest' },
+  Medium: { label: '中风险', color: 'bg-red-100 text-red-700', intensity: 'strongest' }
 }
 
-const ActionItem: Component<ActionItemProps> = (props) => {
+const ActionItem: Component<ActionItemProps> = props => {
   const cfg = riskConfig[props.action.risk]
-  const [checked, setChecked] = createSignal(false)
   const [dialogOpen, setDialogOpen] = createSignal(false)
 
-  // 三级 IDE 在用检测：点击时检测，运行时禁用
-  const [inUse, setInUse] = createSignal<boolean | null>(null)
+  const currentIdeStatus = () => props.ideStatus
 
-  const handlePrimary = async () => {
-    if (props.action.interactive) {
-      // 交由父级处理交互式流程
+  const handlePrimary = () => {
+    if (props.action.interactive) return
+    if (props.action.risk === 'Medium' && currentIdeStatus()?.status !== 'not_running')
       return
-    }
-    if (props.action.risk === 'Medium' && inUse() === null) {
-      // 检测 IDE 是否在用
-      const r = await checkIdeInUse(props.action.scan_paths[0] || '')
-      setInUse(r.in_use)
-    }
     setDialogOpen(true)
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = (input?: string) => {
     setDialogOpen(false)
-    props.onRun(props.action.id)
+    const acknowledgement =
+      props.action.risk === 'Zero'
+        ? 'confirmed'
+        : props.action.risk === 'Low'
+          ? 'rebuild-understood'
+          : (input ?? '')
+    props.onRun(props.action.id, acknowledgement)
   }
 
-  const disabled = () => props.running || (props.action.risk === 'Medium' && inUse() === true)
+  const mediumBlocked = () => {
+    const status = currentIdeStatus()
+    return props.action.risk === 'Medium' && status?.status !== 'not_running'
+  }
+  const disabled = () => props.disabled || props.running || mediumBlocked()
+
+  const ideStatusLabel = () => {
+    const status = currentIdeStatus()?.status
+    if (status === 'checking') return '检测中'
+    if (status === 'running') return '检测到在用'
+    if (status === 'not_running') return '未检测到运行'
+    if (status === 'check_failed') return '检测失败'
+    return ''
+  }
+  const ideStatusMessage = () => {
+    const status = currentIdeStatus()
+    return status && 'message' in status ? status.message : undefined
+  }
 
   return (
     <div class="rounded-lg bg-white p-3 shadow-sm ring-1 ring-black/5">
       <div class="flex items-center gap-3">
         <input
           type="checkbox"
-          checked={checked()}
-          onChange={(e) => setChecked(e.currentTarget.checked)}
+          aria-label={`选择 ${props.action.name}`}
+          checked={props.selected}
+          disabled={props.action.interactive || disabled()}
+          onChange={() => props.onSelectedChange(props.action.id)}
           class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-200"
         />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <span class="truncate text-sm font-semibold text-gray-800">{props.action.name}</span>
-            <span class={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${cfg.color}`}>
+            <span class="truncate text-sm font-semibold text-gray-800">
+              {props.action.name}
+            </span>
+            <span
+              class={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${cfg.color}`}
+            >
               {cfg.label}
             </span>
             <Show when={props.action.requires_sudo}>
-              <span class="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">需 sudo</span>
+              <span class="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">
+                需 sudo
+              </span>
             </Show>
             <Show when={props.action.interactive}>
-              <span class="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">交互式</span>
+              <span class="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">
+                交互式
+              </span>
             </Show>
-            <Show when={props.action.risk === 'Medium' && inUse() === true}>
-              <span class="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">检测到在用</span>
+            <Show when={props.action.risk === 'Medium' && currentIdeStatus()}>
+              <span
+                title={ideStatusMessage()}
+                class={`shrink-0 rounded px-1.5 py-0.5 text-xs ${
+                  currentIdeStatus()?.status === 'not_running'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-red-50 text-red-600'
+                }`}
+              >
+                {ideStatusLabel()}
+              </span>
             </Show>
           </div>
           <div class="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
@@ -80,8 +131,8 @@ const ActionItem: Component<ActionItemProps> = (props) => {
         <Show when={props.action.interactive}>
           <button
             type="button"
-            onClick={() => props.onRun(props.action.id)}
-            disabled={props.running}
+            onClick={() => props.onInteractive(props.action.id)}
+            disabled={disabled()}
             class="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
           >
             选择版本
@@ -106,16 +157,21 @@ const ActionItem: Component<ActionItemProps> = (props) => {
       </div>
 
       <Show when={props.result}>
-        <ResultBadge result={props.result as ActionResult} />
+        <ResultBadge result={props.result} />
       </Show>
 
       <ConfirmDialog
         open={dialogOpen()}
         title={`确认清理：${props.action.name}`}
         message="此操作将删除对应缓存/数据，删除后通常会自动重建。"
-        detail={props.action.risk === 'Medium' ? '⚠ 中风险：下次启动会重建数据，历史配置可能丢失。' : undefined}
+        detail={
+          props.action.risk === 'Medium'
+            ? '⚠ 中风险：下次启动会重建数据，历史配置可能丢失。'
+            : undefined
+        }
         intensity={cfg.intensity}
         placeholder={props.action.name}
+        expectedInput={props.action.risk === 'Medium' ? props.action.name : undefined}
         onConfirm={handleConfirm}
         onCancel={() => setDialogOpen(false)}
       />

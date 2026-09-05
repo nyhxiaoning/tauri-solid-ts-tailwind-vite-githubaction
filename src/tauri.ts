@@ -75,9 +75,10 @@ export interface UninstallVersionRequest {
   acknowledgement: string
 }
 
-export interface InUseResult {
-  in_use: boolean
-}
+export type IdeUseResult =
+  | { status: 'running' }
+  | { status: 'not_running' }
+  | { status: 'check_failed'; message: string }
 
 export interface DiagnosisReport {
   disk: DiskUsage
@@ -104,16 +105,7 @@ export function findAction(id: string): Promise<CleanupAction | null> {
   return invoke<CleanupAction | null>('find_action_cmd', { id })
 }
 
-export function runAction(request: RunActionRequest): Promise<ActionResult>
-/**
- * Temporary Task 5 compatibility bridge for callers not yet migrated.
- * @deprecated Pass a RunActionRequest so Rust can enforce acknowledgements and exclusions.
- */
-export function runAction(id: string): Promise<ActionResult>
-export function runAction(requestOrId: RunActionRequest | string): Promise<ActionResult> {
-  const request = typeof requestOrId === 'string'
-    ? { id: requestOrId, acknowledgement: 'confirmed', excluded_paths: [] }
-    : requestOrId
+export function runAction(request: RunActionRequest): Promise<ActionResult> {
   return invoke<ActionResult>('run_action_cmd', { request })
 }
 
@@ -141,10 +133,12 @@ export function listRustToolchains(): Promise<VersionEntry[]> {
   return listVersions('list_rust_toolchains_cmd', 'Rustup 工具链读取失败')
 }
 
-export function uninstallVersion(request: UninstallVersionRequest): Promise<UninstallResult> {
+export function uninstallVersion(
+  request: UninstallVersionRequest
+): Promise<UninstallResult> {
   return invoke<UninstallResult>('uninstall_version_cmd', { request })
 }
 
-export function checkIdeInUse(path: string): Promise<InUseResult> {
-  return invoke<InUseResult>('check_ide_in_use_cmd', { path })
+export function checkIdeInUse(path: string): Promise<IdeUseResult> {
+  return invoke<IdeUseResult>('check_ide_in_use_cmd', { path })
 }
