@@ -8,7 +8,7 @@ import {
 import ConfirmDialog, { ConfirmIntensity } from './ConfirmDialog'
 import ResultBadge from './ResultBadge'
 
-export type IdeDisplayStatus = IdeUseResult | { status: 'checking'; message?: string }
+export type IdeDisplayStatus = IdeUseResult | { status: 'checking'; message: string }
 
 interface ActionItemProps {
   action: CleanupAction
@@ -112,6 +112,12 @@ const ActionItem: Component<ActionItemProps> = props => {
             <Show when={props.action.risk === 'Medium' && currentIdeStatus()}>
               <span
                 title={ideStatusMessage()}
+                role={
+                  currentIdeStatus()?.status === 'check_failed' ? undefined : 'status'
+                }
+                aria-live={
+                  currentIdeStatus()?.status === 'check_failed' ? undefined : 'polite'
+                }
                 class={`shrink-0 rounded px-1.5 py-0.5 text-xs ${
                   currentIdeStatus()?.status === 'not_running'
                     ? 'bg-emerald-50 text-emerald-700'
@@ -126,6 +132,18 @@ const ActionItem: Component<ActionItemProps> = props => {
             <span>预估释放</span>
             <span class="font-bold text-emerald-600">~{props.action.estimate_gb} GB</span>
           </div>
+          <Show when={ideStatusMessage()}>
+            <div
+              role={currentIdeStatus()?.status === 'check_failed' ? 'alert' : undefined}
+              class={`mt-1 text-xs ${
+                currentIdeStatus()?.status === 'check_failed'
+                  ? 'text-red-600'
+                  : 'text-gray-500'
+              }`}
+            >
+              {ideStatusMessage()}
+            </div>
+          </Show>
         </div>
 
         <Show when={props.action.interactive}>

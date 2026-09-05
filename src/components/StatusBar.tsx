@@ -6,10 +6,11 @@ interface StatusBarProps {
   disk: DiskUsage | null
   releasedTotal: number
   estimateTotal: number
+  refreshing: boolean
   onRefresh: () => void
 }
 
-const StatusBar: Component<StatusBarProps> = (props) => {
+const StatusBar: Component<StatusBarProps> = props => {
   const fmt = (gb: number) => gb.toFixed(1)
 
   return (
@@ -24,20 +25,25 @@ const StatusBar: Component<StatusBarProps> = (props) => {
           onClick={props.onRefresh}
           class="text-xs text-blue-600 hover:text-blue-800"
         >
-          🔄 刷新
+          {props.refreshing ? '🔄 刷新中…' : '🔄 刷新'}
         </button>
       </div>
 
-      <Show when={props.disk} fallback={<div class="h-4 w-full animate-pulse rounded bg-gray-200" />}>
-        <DiskOverview disk={props.disk!} />
+      <Show
+        when={props.disk}
+        fallback={<div class="h-4 w-full animate-pulse rounded bg-gray-200" />}
+      >
+        {disk => <DiskOverview disk={disk()} />}
       </Show>
 
       <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 text-xs">
         <span class="text-gray-600">
-          本次会话已释放 <span class="font-bold text-emerald-600">{fmt(props.releasedTotal)} GB</span>
+          本次会话已释放{' '}
+          <span class="font-bold text-emerald-600">{fmt(props.releasedTotal)} GB</span>
         </span>
         <span class="text-gray-500">
-          选中项预估释放 <span class="font-bold text-blue-600">{fmt(props.estimateTotal)} GB</span>
+          选中项预估释放{' '}
+          <span class="font-bold text-blue-600">{fmt(props.estimateTotal)} GB</span>
         </span>
       </div>
     </div>

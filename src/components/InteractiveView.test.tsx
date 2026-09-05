@@ -1,8 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { listNodeVersions, uninstallVersion, type CleanupAction } from '../tauri'
 import InteractiveView from './InteractiveView'
-import type { CleanupAction } from '../tauri'
-import { listNodeVersions, uninstallVersion } from '../tauri'
 
 vi.mock('../tauri', () => ({
   listNodeVersions: vi.fn(),
@@ -23,6 +22,8 @@ const action: CleanupAction = {
 }
 
 describe('InteractiveView version safety', () => {
+  afterEach(cleanup)
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(listNodeVersions).mockResolvedValue([
@@ -37,10 +38,19 @@ describe('InteractiveView version safety', () => {
   })
 
   it('starts unselected and requires an explicit strong confirmation before uninstalling', async () => {
-    render(() => <InteractiveView action={action} onBack={vi.fn()} onDone={vi.fn()} />)
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={vi.fn()}
+      />
+    ))
 
     const oldVersion = await screen.findByRole('checkbox', { name: /v18\.20\.0/ })
+    const currentVersion = screen.getByRole('checkbox', { name: /v22\.14\.0/ })
     expect((oldVersion as HTMLInputElement).checked).toBe(false)
+    expect(currentVersion).toHaveProperty('disabled', true)
     expect(screen.getByText('已选 0 个')).toBeTruthy()
 
     fireEvent.click(oldVersion)
@@ -65,11 +75,130 @@ describe('InteractiveView version safety', () => {
   it('shows a listing failure instead of presenting it as an empty installation', async () => {
     vi.mocked(listNodeVersions).mockRejectedValueOnce(new Error('nvm command timed out'))
 
-    render(() => <InteractiveView action={action} onBack={vi.fn()} onDone={vi.fn()} />)
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={vi.fn()}
+      />
+    ))
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('版本列表读取失败')
     expect(alert.textContent).toContain('nvm command timed out')
     expect(screen.queryByText('未检测到已安装的版本。')).toBeNull()
+  })
+
+  it('reports each uninstall result before the sequence continues', async () => {
+    vi.mocked(listNodeVersions).mockResolvedValueOnce([
+      { name: 'v18.20.0', current: false },
+      { name: 'v20.19.0', current: false },
+      { name: 'v22.14.0', current: true }
+    ])
+    let finishSecond!: (value: {
+      version: string
+      status: 'success'
+      message: string
+    }) => void
+    const firstResult = { version: 'v18.20.0', status: 'success' as const, message: '' }
+    vi.mocked(uninstallVersion)
+      .mockResolvedValueOnce(firstResult)
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishSecond = resolve
+          })
+      )
+    const onResult = vi.fn()
+
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={onResult}
+      />
+    ))
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /v20\.19\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (2)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith(firstResult))
+    await waitFor(() => expect(uninstallVersion).toHaveBeenCalledTimes(2))
+    finishSecond({ version: 'v20.19.0', status: 'success', message: '' })
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a rejected uninstall request as a failed result', async () => {
+    vi.mocked(uninstallVersion).mockRejectedValueOnce(new Error('nvm uninstall failed'))
+    const onResult = vi.fn()
+
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={onResult}
+      />
+    ))
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (1)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+
+    await waitFor(() =>
+      expect(onResult).toHaveBeenCalledWith({
+        version: 'v18.20.0',
+        status: 'failed',
+        message: 'nvm uninstall failed'
+      })
+    )
+    expect(await screen.findByText(/nvm uninstall failed/)).toBeTruthy()
+  })
+
+  it('locks both close controls only while an uninstall request is in flight', async () => {
+    let finish!: (value: { version: string; status: 'success'; message: string }) => void
+    vi.mocked(uninstallVersion).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+    const onBack = vi.fn()
+    const onDone = vi.fn()
+
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={onBack}
+        onDone={onDone}
+        onResult={vi.fn()}
+      />
+    ))
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (1)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+    await waitFor(() => expect(uninstallVersion).toHaveBeenCalledTimes(1))
+
+    expect(screen.getByRole('button', { name: '关闭版本清理' })).toHaveProperty(
+      'disabled',
+      true
+    )
+    expect(screen.getByRole('button', { name: '返回' })).toHaveProperty('disabled', true)
+    finish({ version: 'v18.20.0', status: 'success', message: '' })
+
+    const done = await screen.findByRole('button', { name: '完成' })
+    await waitFor(() => expect(done).toHaveProperty('disabled', false))
+    expect(onDone).not.toHaveBeenCalled()
+    fireEvent.click(done)
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onBack).not.toHaveBeenCalled()
   })
 })

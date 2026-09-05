@@ -2,11 +2,14 @@ import { Component, createSignal, For, onMount, Show } from 'solid-js'
 import { batchEligible } from '../cleanup-ui'
 import { excludedPaths } from '../store'
 import {
+  checkIdeInUse,
   listActions,
   runAction,
   type ActionResult,
   type CleanupAction,
-  type Tier
+  type IdeUseResult,
+  type Tier,
+  type UninstallResult
 } from '../tauri'
 import ActionItem, { type IdeDisplayStatus } from './ActionItem'
 import BatchConfirmDialog from './BatchConfirmDialog'
@@ -20,7 +23,7 @@ interface MenuViewProps {
   subtitle: string
   icon: string
   onSelectedChange: (estimateGb: number) => void
-  onActionComplete: (result: ActionResult) => void
+  onActionComplete: (result: ActionResult | UninstallResult) => void
 }
 
 const tierMeta: Record<Tier, { riskLabel: string; riskColor: string; intro: string }> = {
@@ -60,7 +63,10 @@ const MenuView: Component<MenuViewProps> = props => {
   const [selected, setSelected] = createSignal<Set<string>>(new Set<string>())
   const [feedbacks, setFeedbacks] = createSignal<ActionResult[]>([])
   const [runningId, setRunningId] = createSignal<string | null>(null)
-  const [ideStatuses] = createSignal<Partial<Record<string, IdeDisplayStatus>>>({})
+  const [ideStatuses, setIdeStatuses] = createSignal<
+    Partial<Record<string, IdeDisplayStatus>>
+  >({})
+  const [ideRefreshing, setIdeRefreshing] = createSignal(false)
   const [batchState, setBatchState] = createSignal<
     'idle' | 'confirming' | 'running' | 'stopping'
   >('idle')
@@ -72,9 +78,47 @@ const MenuView: Component<MenuViewProps> = props => {
     null
   )
 
+  const refreshIdeStatuses = async (loadedActions: CleanupAction[]) => {
+    const ideActions = loadedActions.filter(action => action.risk === 'Medium')
+    setIdeRefreshing(true)
+    const checkingStatuses: Partial<Record<string, IdeDisplayStatus>> =
+      Object.fromEntries(
+        ideActions.map(action => [
+          action.id,
+          { status: 'checking' as const, message: '正在检测 IDE 运行状态' }
+        ])
+      )
+    setIdeStatuses(checkingStatuses)
+    const ideIds = new Set(ideActions.map(action => action.id))
+    setSelected(previous => {
+      if (![...previous].some(id => ideIds.has(id))) return previous
+      const next = new Set([...previous].filter(id => !ideIds.has(id)))
+      props.onSelectedChange(computeEstimate(next))
+      return next
+    })
+    try {
+      await Promise.all(
+        ideActions.map(async action => {
+          let status: IdeUseResult
+          try {
+            status = await checkIdeInUse(action.scan_paths[0] ?? action.name)
+          } catch (error: unknown) {
+            status = { status: 'check_failed', message: errorMessage(error) }
+          }
+          setIdeStatuses(previous => ({ ...previous, [action.id]: status }))
+        })
+      )
+    } finally {
+      setIdeRefreshing(false)
+    }
+  }
+
   onMount(() => {
     void listActions(props.tier)
-      .then(setActions)
+      .then(loadedActions => {
+        setActions(loadedActions)
+        if (props.tier === 'three') void refreshIdeStatuses(loadedActions)
+      })
       .catch((error: unknown) => console.error('加载失败', error))
       .finally(() => setLoading(false))
   })
@@ -228,6 +272,17 @@ const MenuView: Component<MenuViewProps> = props => {
 
       {/* 工具栏 */}
       <div class="flex flex-wrap items-center gap-2">
+        <Show when={props.tier === 'three'}>
+          <button
+            type="button"
+            onClick={() => void refreshIdeStatuses(actions())}
+            disabled={ideRefreshing() || isRunning() || runningId() !== null}
+            class="text-xs text-blue-600 hover:text-blue-800 disabled:text-gray-400"
+          >
+            重新检测 IDE
+          </button>
+          <div class="h-4 w-px bg-gray-200" />
+        </Show>
         <button
           type="button"
           onClick={selectAll}
@@ -327,6 +382,7 @@ const MenuView: Component<MenuViewProps> = props => {
           action={interactiveAction()}
           onBack={() => setInteractiveAction(null)}
           onDone={() => setInteractiveAction(null)}
+          onResult={props.onActionComplete}
         />
       </Show>
 

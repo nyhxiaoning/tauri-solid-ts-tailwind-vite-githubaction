@@ -1,38 +1,51 @@
 import { Component, createSignal, onMount, Show } from 'solid-js'
-import { RouterProvider, type View, useView } from './components/Router'
-import StatusBar from './components/StatusBar'
+import DiagView from './components/DiagView'
 import MenuGrid from './components/MenuGrid'
 import MenuView from './components/MenuView'
-import DiagView from './components/DiagView'
+import { RouterProvider, useView } from './components/Router'
 import SettingsView from './components/SettingsView'
-import type { DiskUsage, ActionResult, Tier } from './tauri'
-import { getDiskUsage } from './tauri'
+import StatusBar from './components/StatusBar'
+import {
+  getDiskUsage,
+  type ActionResult,
+  type DiskUsage,
+  type Tier,
+  type UninstallResult
+} from './tauri'
 
 const AppContent: Component = () => {
   const { view, setView } = useView()
   const [disk, setDisk] = createSignal<DiskUsage | null>(null)
+  const [refreshing, setRefreshing] = createSignal(false)
   const [releasedTotal, setReleasedTotal] = createSignal(0)
   const [selectedEstimate, setSelectedEstimate] = createSignal(0)
-  const [refreshing, setRefreshing] = createSignal(false)
+  let diskRequestGeneration = 0
 
   const refreshDisk = async () => {
+    const requestGeneration = ++diskRequestGeneration
     setRefreshing(true)
     try {
       const d = await getDiskUsage()
-      setDisk(d)
+      if (requestGeneration === diskRequestGeneration) {
+        setDisk(d)
+      }
     } finally {
-      setRefreshing(false)
+      if (requestGeneration === diskRequestGeneration) {
+        setRefreshing(false)
+      }
     }
   }
 
-  onMount(refreshDisk)
+  onMount(() => {
+    void refreshDisk()
+  })
 
-  const handleActionComplete = (r: ActionResult) => {
-    if (r.status === 'success') {
-      setReleasedTotal((prev) => prev + r.released_gb)
-      // 清理后刷新磁盘状态
-      refreshDisk()
+  const handleActionComplete = (r: ActionResult | UninstallResult) => {
+    if (r.status === 'success' && 'released_gb' in r) {
+      setReleasedTotal(prev => prev + r.released_gb)
     }
+    // 每个成功、失败或跳过的结果都可能对应磁盘状态变化。
+    void refreshDisk()
   }
 
   const tierView = (tier: Tier) => {
@@ -48,6 +61,10 @@ const AppContent: Component = () => {
       />
     )
   }
+  const currentTier = () => {
+    const currentView = view()
+    return typeof currentView === 'object' ? currentView.tier : null
+  }
 
   return (
     <div class="min-h-screen bg-gray-100">
@@ -58,22 +75,21 @@ const AppContent: Component = () => {
             disk={disk()}
             releasedTotal={releasedTotal()}
             estimateTotal={selectedEstimate()}
-            onRefresh={refreshDisk}
+            refreshing={refreshing()}
+            onRefresh={() => void refreshDisk()}
           />
         </div>
 
         {/* 视图切换 */}
         <Show when={view() === 'menu'}>
           <MenuGrid
-            onNavigate={(t) => setView({ tier: t })}
+            onNavigate={t => setView({ tier: t })}
             onDiag={() => setView('diag')}
             onSettings={() => setView('settings')}
           />
         </Show>
 
-        <Show when={typeof view() === 'object' && !!(view() as any).tier}>
-          {(v) => tierView((v as any).tier)}
-        </Show>
+        <Show when={currentTier()}>{tier => tierView(tier())}</Show>
 
         <Show when={view() === 'diag'}>
           <DiagView />
@@ -95,7 +111,7 @@ const tierMeta = (tier: Tier) => {
   const map: Record<Tier, { title: string; subtitle: string; icon: string }> = {
     one: { title: '一级清理', subtitle: '零风险·全是缓存', icon: '🟢' },
     two: { title: '二级清理', subtitle: '低风险·需重建', icon: '🟡' },
-    three: { title: '三级清理', subtitle: '中风险·IDE 冗余', icon: '🔴' },
+    three: { title: '三级清理', subtitle: '中风险·IDE 冗余', icon: '🔴' }
   }
   return map[tier]
 }

@@ -45,7 +45,10 @@ describe('ActionItem IDE status', () => {
       <ActionItem
         action={mediumAction}
         selected={false}
-        ideStatus={{ status: 'running' }}
+        ideStatus={{
+          status: 'running',
+          message: '检测到 IDE 正在运行，请先关闭该 IDE 后再执行清理'
+        }}
         onSelectedChange={vi.fn()}
         onRun={vi.fn()}
         onInteractive={vi.fn()}
@@ -55,6 +58,8 @@ describe('ActionItem IDE status', () => {
     ))
 
     expect(screen.getByText('检测到在用')).toBeTruthy()
+    expect(screen.getByText(/请先关闭该 IDE/)).toBeTruthy()
+    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
     expect(screen.getByRole('checkbox', { name: '选择 Windsurf' })).toHaveProperty(
       'disabled',
       true
@@ -63,7 +68,7 @@ describe('ActionItem IDE status', () => {
   })
 
   it.each([
-    [{ status: 'checking' } as const, '检测中'],
+    [{ status: 'checking', message: '正在检测 IDE 运行状态' } as const, '检测中'],
     [{ status: 'check_failed', message: 'pgrep 不可用' } as const, '检测失败']
   ])('blocks cleanup while the IDE status is %s', (ideStatus, label) => {
     render(() => (
@@ -80,6 +85,11 @@ describe('ActionItem IDE status', () => {
     ))
 
     expect(screen.getByText(label)).toBeTruthy()
+    if (ideStatus.status === 'check_failed') {
+      expect(screen.getByRole('alert').textContent).toContain('pgrep 不可用')
+    } else {
+      expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
+    }
     expect(screen.getByRole('checkbox', { name: '选择 Windsurf' })).toHaveProperty(
       'disabled',
       true
@@ -92,7 +102,7 @@ describe('ActionItem IDE status', () => {
       <ActionItem
         action={mediumAction}
         selected={false}
-        ideStatus={{ status: 'not_running' }}
+        ideStatus={{ status: 'not_running', message: '未检测到 IDE 正在运行' }}
         onSelectedChange={vi.fn()}
         onRun={vi.fn()}
         onInteractive={vi.fn()}
@@ -102,6 +112,7 @@ describe('ActionItem IDE status', () => {
     ))
 
     expect(screen.getByText('未检测到运行')).toBeTruthy()
+    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite')
     expect(screen.getByRole('checkbox', { name: '选择 Windsurf' })).toHaveProperty(
       'disabled',
       false

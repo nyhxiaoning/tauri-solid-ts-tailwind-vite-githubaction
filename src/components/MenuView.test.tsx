@@ -1,13 +1,26 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setExcludedPaths } from '../store'
-import { listActions, runAction, type ActionResult, type CleanupAction } from '../tauri'
+import {
+  checkIdeInUse,
+  listActions,
+  listNodeVersions,
+  runAction,
+  uninstallVersion,
+  type ActionResult,
+  type CleanupAction,
+  type UninstallResult
+} from '../tauri'
 import MenuView from './MenuView'
 import { RouterProvider } from './Router'
 
 vi.mock('../tauri', () => ({
+  checkIdeInUse: vi.fn(),
   listActions: vi.fn(),
-  runAction: vi.fn()
+  listNodeVersions: vi.fn(),
+  listRustToolchains: vi.fn(),
+  runAction: vi.fn(),
+  uninstallVersion: vi.fn()
 }))
 
 const action = (overrides: Partial<CleanupAction> = {}): CleanupAction => ({
@@ -34,7 +47,10 @@ const result = (item: CleanupAction): ActionResult => ({
   message: '完成'
 })
 
-const renderMenu = (tier: CleanupAction['tier'] = 'one') =>
+const renderMenu = (
+  tier: CleanupAction['tier'] = 'one',
+  onActionComplete: (result: ActionResult | UninstallResult) => void = vi.fn()
+) =>
   render(() => (
     <RouterProvider>
       <MenuView
@@ -43,7 +59,7 @@ const renderMenu = (tier: CleanupAction['tier'] = 'one') =>
         subtitle="测试菜单"
         icon="🧹"
         onSelectedChange={vi.fn()}
-        onActionComplete={vi.fn()}
+        onActionComplete={onActionComplete}
       />
     </RouterProvider>
   ))
@@ -56,6 +72,7 @@ describe('MenuView batch cleanup', () => {
     setExcludedPaths([])
     const item = action()
     vi.mocked(listActions).mockResolvedValue([item])
+    vi.mocked(listNodeVersions).mockResolvedValue([])
     vi.mocked(runAction).mockResolvedValue(result(item))
   })
 
@@ -84,6 +101,37 @@ describe('MenuView batch cleanup', () => {
 
     expect(await screen.findByRole('heading', { name: 'NVM 旧 Node 版本' })).toBeTruthy()
     expect(runAction).not.toHaveBeenCalled()
+  })
+
+  it('surfaces an interactive uninstall result to the parent immediately', async () => {
+    const interactive = action({
+      id: 's2-03-nvm',
+      tier: 'two',
+      name: 'NVM 旧 Node 版本',
+      risk: 'Low',
+      interactive: true
+    })
+    const uninstallResult = {
+      version: 'v18.20.0',
+      status: 'success' as const,
+      message: ''
+    }
+    const onActionComplete = vi.fn()
+    vi.mocked(listActions).mockResolvedValue([interactive])
+    vi.mocked(listNodeVersions).mockResolvedValue([
+      { name: 'v18.20.0', current: false },
+      { name: 'v22.14.0', current: true }
+    ])
+    vi.mocked(uninstallVersion).mockResolvedValue(uninstallResult)
+
+    renderMenu('two', onActionComplete)
+    fireEvent.click(await screen.findByRole('button', { name: '选择版本' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (1)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+
+    await waitFor(() => expect(onActionComplete).toHaveBeenCalledWith(uninstallResult))
   })
 
   it('waits for summary confirmation before starting a selected batch', async () => {
@@ -171,6 +219,118 @@ describe('MenuView batch cleanup', () => {
       true
     )
     expect(runAction).not.toHaveBeenCalled()
+  })
+
+  it('checks every IDE when the tier-three actions finish loading', async () => {
+    vi.mocked(listActions).mockResolvedValue([
+      action({
+        id: 'windsurf',
+        tier: 'three',
+        name: 'Windsurf',
+        risk: 'Medium',
+        scan_paths: ['~/.windsurf']
+      }),
+      action({
+        id: 'codex',
+        tier: 'three',
+        name: 'Codex',
+        risk: 'Medium',
+        scan_paths: ['~/.codex']
+      })
+    ])
+    vi.mocked(checkIdeInUse)
+      .mockResolvedValueOnce({ status: 'running', message: '请先关闭 Windsurf' })
+      .mockResolvedValueOnce({ status: 'not_running', message: '未检测到 Codex' })
+
+    renderMenu('three')
+
+    await waitFor(() => expect(checkIdeInUse).toHaveBeenCalledTimes(2))
+    expect(checkIdeInUse).toHaveBeenNthCalledWith(1, '~/.windsurf')
+    expect(checkIdeInUse).toHaveBeenNthCalledWith(2, '~/.codex')
+    expect(await screen.findByText('检测到在用')).toBeTruthy()
+    expect(await screen.findByText('未检测到运行')).toBeTruthy()
+  })
+
+  it('refreshes every IDE status again on demand', async () => {
+    vi.mocked(listActions).mockResolvedValue([
+      action({
+        id: 'windsurf',
+        tier: 'three',
+        name: 'Windsurf',
+        risk: 'Medium',
+        scan_paths: ['~/.windsurf']
+      })
+    ])
+    vi.mocked(checkIdeInUse).mockResolvedValueOnce({
+      status: 'not_running',
+      message: '未检测到 Windsurf'
+    })
+
+    renderMenu('three')
+
+    expect(await screen.findByText('未检测到运行')).toBeTruthy()
+    vi.mocked(checkIdeInUse).mockResolvedValueOnce({
+      status: 'running',
+      message: '请先关闭 Windsurf'
+    })
+    fireEvent.click(screen.getByRole('button', { name: '重新检测 IDE' }))
+
+    await waitFor(() => expect(checkIdeInUse).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('检测到在用')).toBeTruthy()
+  })
+
+  it('keeps IDE checks fail-closed when the status request fails', async () => {
+    vi.mocked(listActions).mockResolvedValue([
+      action({
+        id: 'windsurf',
+        tier: 'three',
+        name: 'Windsurf',
+        risk: 'Medium',
+        scan_paths: ['~/.windsurf']
+      })
+    ])
+    vi.mocked(checkIdeInUse).mockRejectedValueOnce(new Error('pgrep 不可用'))
+
+    renderMenu('three')
+
+    const status = await screen.findByText('检测失败')
+    expect(status).toHaveProperty('title', 'pgrep 不可用')
+    expect(screen.getByText('pgrep 不可用')).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: '选择 Windsurf' })).toHaveProperty(
+      'disabled',
+      true
+    )
+    expect(screen.getByRole('button', { name: '清理' })).toHaveProperty('disabled', true)
+  })
+
+  it('removes an IDE from the batch when a refresh can no longer verify it as stopped', async () => {
+    vi.mocked(listActions).mockResolvedValue([
+      action({
+        id: 'windsurf',
+        tier: 'three',
+        name: 'Windsurf',
+        risk: 'Medium',
+        scan_paths: ['~/.windsurf']
+      })
+    ])
+    vi.mocked(checkIdeInUse)
+      .mockResolvedValueOnce({ status: 'not_running', message: '未检测到 Windsurf' })
+      .mockResolvedValueOnce({ status: 'running', message: '请先关闭 Windsurf' })
+
+    renderMenu('three')
+
+    const checkbox = await screen.findByRole('checkbox', { name: '选择 Windsurf' })
+    await waitFor(() => expect(checkbox).toHaveProperty('disabled', false))
+    fireEvent.click(checkbox)
+    expect(checkbox).toHaveProperty('checked', true)
+    fireEvent.click(screen.getByRole('button', { name: '重新检测 IDE' }))
+
+    await screen.findByText('检测到在用')
+    expect(checkbox).toHaveProperty('checked', false)
+    expect(screen.getByRole('button', { name: '🚀 一键执行已勾选 (0)' })).toHaveProperty(
+      'disabled',
+      true
+    )
   })
 
   it('stops before the next action and keeps unexecuted actions selected', async () => {

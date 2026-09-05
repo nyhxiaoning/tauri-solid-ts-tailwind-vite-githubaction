@@ -5,12 +5,33 @@ use std::time::Duration;
 use std::{fs, io};
 use wait_timeout::ChildExt;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(tag = "status", content = "message", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum IdeUseStatus {
     Running,
     NotRunning,
     CheckFailed(String),
+}
+
+impl serde::Serialize for IdeUseStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let (status, message) = match self {
+            Self::Running => (
+                "running",
+                "检测到 IDE 正在运行，请先关闭该 IDE 后再执行清理",
+            ),
+            Self::NotRunning => ("not_running", "未检测到 IDE 正在运行"),
+            Self::CheckFailed(message) => ("check_failed", message.as_str()),
+        };
+        let mut result = serializer.serialize_struct("IdeUseStatus", 2)?;
+        result.serialize_field("status", status)?;
+        result.serialize_field("message", message)?;
+        result.end()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -309,5 +330,20 @@ mod tests {
             check_process_with("sh", &["-c", "exit 2"]),
             IdeUseStatus::CheckFailed(_)
         ));
+    }
+
+    #[test]
+    fn ide_status_serialization_always_includes_a_message() {
+        let running = serde_json::to_value(IdeUseStatus::Running).unwrap();
+        let not_running = serde_json::to_value(IdeUseStatus::NotRunning).unwrap();
+        let failed =
+            serde_json::to_value(IdeUseStatus::CheckFailed("pgrep failed".into())).unwrap();
+
+        assert_eq!(running["status"], "running");
+        assert!(running["message"].as_str().unwrap().contains("关闭"));
+        assert_eq!(not_running["status"], "not_running");
+        assert!(not_running["message"].is_string());
+        assert_eq!(failed["status"], "check_failed");
+        assert_eq!(failed["message"], "pgrep failed");
     }
 }

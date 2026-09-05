@@ -63,7 +63,7 @@ export interface VersionEntry {
 
 export interface UninstallResult {
   version: string
-  status: string
+  status: 'success' | 'failed'
   message: string
 }
 
@@ -76,8 +76,8 @@ export interface UninstallVersionRequest {
 }
 
 export type IdeUseResult =
-  | { status: 'running' }
-  | { status: 'not_running' }
+  | { status: 'running'; message: string }
+  | { status: 'not_running'; message: string }
   | { status: 'check_failed'; message: string }
 
 export interface DiagnosisReport {
