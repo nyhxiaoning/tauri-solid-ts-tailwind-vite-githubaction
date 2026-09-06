@@ -1,11 +1,9 @@
 [package]
-name = "app"
+name = "macos-cleanup-hub"
 version = "2.0.0"
-description = "A Tauri Solid TypeScript Tailwind Vite App Template"
-authors = ["AR10"]
+description = "A confirmation-first macOS disk cleanup desktop app built with Tauri and SolidJS"
 license = "MIT"
-repository = "https://github.com/AR10Dev/tauri-solid-ts-tailwind-vite"
-default-run = "app"
+default-run = "macos-cleanup-hub"
 edition = "2024"
 
 [lib]

@@ -1,4 +1,6 @@
-use super::safety::{existing_path_components_are_not_symlinks, matching_exclusion};
+use super::safety::{
+    existing_path_components_are_not_symlinks, matching_exclusion, validate_exclusions,
+};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -49,12 +51,14 @@ pub(crate) enum OperationExecution {
     Completed,
     Missing(PathBuf),
     Excluded(PathBuf),
+    ExcludedByPolicy,
 }
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum OperationPreflight {
     Ready(PathBuf),
     External,
+    ExternalExcluded,
     Missing(PathBuf),
     Excluded(PathBuf),
 }
@@ -92,7 +96,14 @@ pub(crate) fn preflight_operation(
 ) -> Result<OperationPreflight, String> {
     let registered_target = match operation {
         CleanupOperation::RemoveTarget(target) | CleanupOperation::RemoveContents(target) => target,
-        CleanupOperation::External { .. } => return Ok(OperationPreflight::External),
+        CleanupOperation::External { .. } => {
+            validate_exclusions(exclusions, home)?;
+            return Ok(if exclusions.is_empty() {
+                OperationPreflight::External
+            } else {
+                OperationPreflight::ExternalExcluded
+            });
+        }
     };
     let target = expand_registered_target(registered_target, home)?;
     if let Some(exclusion) = matching_exclusion(&target, exclusions, home)? {
@@ -150,25 +161,40 @@ pub(crate) fn execute_operation(
     exclusions: &[String],
     home: &Path,
 ) -> Result<OperationExecution, String> {
-    let remove_contents = match operation {
-        CleanupOperation::RemoveTarget(_) => false,
-        CleanupOperation::RemoveContents(_) => true,
-        CleanupOperation::External { program, args } => {
-            return execute_external(program, args, EXTERNAL_TIMEOUT)
-                .map(|_| OperationExecution::Completed);
-        }
-    };
+    execute_operation_with(operation, exclusions, home, execute_external)
+}
+
+fn execute_operation_with<F>(
+    operation: &CleanupOperation,
+    exclusions: &[String],
+    home: &Path,
+    run_external: F,
+) -> Result<OperationExecution, String>
+where
+    F: FnOnce(&str, &[&str], Duration) -> Result<(), String>,
+{
     let target = match preflight_operation(operation, exclusions, home)? {
         OperationPreflight::Ready(target) => target,
         OperationPreflight::Missing(path) => return Ok(OperationExecution::Missing(path)),
         OperationPreflight::Excluded(path) => return Ok(OperationExecution::Excluded(path)),
-        OperationPreflight::External => unreachable!("external operations returned above"),
+        OperationPreflight::ExternalExcluded => {
+            return Ok(OperationExecution::ExcludedByPolicy);
+        }
+        OperationPreflight::External => match operation {
+            CleanupOperation::External { program, args } => {
+                return run_external(program, args, EXTERNAL_TIMEOUT)
+                    .map(|_| OperationExecution::Completed);
+            }
+            _ => unreachable!("only external operations have external preflight"),
+        },
     };
 
-    let result = if remove_contents {
-        execute_remove_contents(&target)
-    } else {
-        execute_remove_target(&target)
+    let result = match operation {
+        CleanupOperation::RemoveTarget(_) => execute_remove_target(&target),
+        CleanupOperation::RemoveContents(_) => execute_remove_contents(&target),
+        CleanupOperation::External { .. } => {
+            unreachable!("external operations returned during preflight")
+        }
     };
     result
         .map(|_| OperationExecution::Completed)
@@ -314,6 +340,31 @@ mod tests {
         let result = execute_external("sh", &["-c", "exit 7"], Duration::from_secs(1));
 
         assert!(result.unwrap_err().contains("非零状态"));
+    }
+
+    #[test]
+    fn external_operation_is_not_spawned_when_any_valid_exclusion_exists() {
+        let home = test_dir("external-exclusion");
+        let excluded = home.join("keep");
+        fs::create_dir_all(&excluded).unwrap();
+        let calls = std::cell::Cell::new(0);
+
+        let result = execute_operation_with(
+            &CleanupOperation::External {
+                program: "docker",
+                args: &["system", "prune", "-a", "-f"],
+            },
+            &[excluded.display().to_string()],
+            &home,
+            |_, _, _| {
+                calls.set(calls.get() + 1);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap(), OperationExecution::ExcludedByPolicy);
+        assert_eq!(calls.get(), 0);
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

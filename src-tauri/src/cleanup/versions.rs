@@ -1,3 +1,4 @@
+use super::safety::{matching_exclusion, validate_exclusions};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
@@ -9,6 +10,7 @@ use wait_timeout::ChildExt;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 const NVM_CURRENT_SCRIPT: &str = "export NVM_DIR=\"$1\"; source \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 || { printf 'NVM 加载失败：%s\\n' \"$NVM_DIR/nvm.sh\" >&2; exit 127; }; nvm current";
+const NVM_DEFAULT_SCRIPT: &str = "export NVM_DIR=\"$1\"; source \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 || { printf 'NVM 加载失败：%s\\n' \"$NVM_DIR/nvm.sh\" >&2; exit 127; }; nvm version default";
 const NVM_UNINSTALL_SCRIPT: &str = "export NVM_DIR=\"$1\"; source \"$NVM_DIR/nvm.sh\"; command -v nvm >/dev/null 2>&1 || { printf 'NVM 加载失败：%s\\n' \"$NVM_DIR/nvm.sh\" >&2; exit 127; }; nvm uninstall \"$2\"";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -36,6 +38,8 @@ pub struct UninstallVersionRequest {
     pub kind: VersionKind,
     pub version: String,
     pub acknowledgement: String,
+    #[serde(default)]
+    pub excluded_paths: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -236,8 +240,23 @@ fn list_node_versions_at(
         return Err(non_empty_error(active.stderr, "NVM 当前版本读取失败"));
     }
     let active_name = active.stdout.trim();
+    let default_name = runner
+        .output(
+            "bash",
+            &[
+                "-lc".into(),
+                NVM_DEFAULT_SCRIPT.into(),
+                "cleanup-hub".into(),
+                nvm_dir.to_string_lossy().into_owned(),
+            ],
+            COMMAND_TIMEOUT,
+        )
+        .ok()
+        .filter(|output| output.success)
+        .map(|output| output.stdout.trim().to_string())
+        .filter(|version| valid_nvm_version(version));
     for entry in &mut entries {
-        entry.current = entry.name == active_name;
+        entry.current = entry.name == active_name || default_name.as_deref() == Some(&entry.name);
     }
     entries.sort_by(|left, right| left.name.cmp(&right.name));
     entries.dedup_by(|left, right| left.name == right.name);
@@ -288,11 +307,32 @@ fn uninstall_version_with_runner_at(
     runner: &mut impl VersionCommandRunner,
     configured_nvm_dir: Option<&Path>,
 ) -> UninstallResult {
+    let home = std::env::home_dir().unwrap_or_default();
+    let rustup_home = std::env::var_os("RUSTUP_HOME").map(PathBuf::from);
+    uninstall_version_with_runner_in(
+        request,
+        runner,
+        configured_nvm_dir,
+        &home,
+        rustup_home.as_deref(),
+    )
+}
+
+fn uninstall_version_with_runner_in(
+    request: &UninstallVersionRequest,
+    runner: &mut impl VersionCommandRunner,
+    configured_nvm_dir: Option<&Path>,
+    home: &Path,
+    configured_rustup_home: Option<&Path>,
+) -> UninstallResult {
     if request.acknowledgement != "rebuild-understood" {
         return failed(&request.version, "未确认重建影响");
     }
     if request.kind == VersionKind::Nvm && !valid_nvm_version(&request.version) {
         return failed(&request.version, "Node 版本格式无效");
+    }
+    if let Err(error) = validate_exclusions(&request.excluded_paths, home) {
+        return failed(&request.version, &error);
     }
     let nvm_dir = if request.kind == VersionKind::Nvm {
         match configured_nvm_dir
@@ -306,6 +346,27 @@ fn uninstall_version_with_runner_at(
     } else {
         None
     };
+    let effective_home = match request.kind {
+        VersionKind::Nvm => nvm_dir.as_ref().unwrap().clone(),
+        VersionKind::Rustup => configured_rustup_home
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| home.join(".rustup")),
+    };
+    if !request.excluded_paths.is_empty() {
+        match matching_exclusion(&effective_home, &request.excluded_paths, home) {
+            Ok(Some(exclusion)) => {
+                return skipped(
+                    &request.version,
+                    &format!(
+                        "版本目录与排除路径重叠：{}，已跳过卸载",
+                        exclusion.display()
+                    ),
+                );
+            }
+            Ok(None) => {}
+            Err(error) => return failed(&request.version, &error),
+        }
+    }
     let entries = match request.kind {
         VersionKind::Nvm => list_node_versions_at(nvm_dir.as_deref().unwrap(), runner),
         VersionKind::Rustup => list_rust_toolchains_with_runner(runner),
@@ -355,6 +416,14 @@ fn failed(version: &str, message: &str) -> UninstallResult {
     UninstallResult {
         version: version.into(),
         status: "failed".into(),
+        message: message.into(),
+    }
+}
+
+fn skipped(version: &str, message: &str) -> UninstallResult {
+    UninstallResult {
+        version: version.into(),
+        status: "skipped".into(),
         message: message.into(),
     }
 }
@@ -419,7 +488,10 @@ mod tests {
             std::fs::create_dir_all(nvm_dir.join("versions/node").join(name)).unwrap();
         }
         let mut runner = FakeRunner {
-            outputs: VecDeque::from([Ok(CommandOutput::success("system\n"))]),
+            outputs: VecDeque::from([
+                Ok(CommandOutput::success("system\n")),
+                Ok(CommandOutput::failure("N/A")),
+            ]),
             calls: vec![],
         };
 
@@ -438,8 +510,99 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(runner.calls.len(), 1);
+        assert_eq!(runner.calls.len(), 2);
         assert!(runner.calls[0].1[1].contains("nvm current"));
+        assert!(runner.calls[1].1[1].contains("nvm version default"));
+    }
+
+    #[test]
+    fn nvm_listing_protects_an_installed_default_when_system_node_is_active() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v22.14.0"]);
+        let mut runner = FakeRunner {
+            outputs: VecDeque::from([
+                Ok(CommandOutput::success("system\n")),
+                Ok(CommandOutput::success("v22.14.0\n")),
+            ]),
+            calls: vec![],
+        };
+
+        let versions = list_node_versions_at(&nvm_dir, &mut runner).unwrap();
+
+        assert_eq!(
+            versions,
+            vec![
+                VersionEntry {
+                    name: "v18.20.0".into(),
+                    current: false,
+                },
+                VersionEntry {
+                    name: "v22.14.0".into(),
+                    current: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn nvm_listing_protects_both_active_and_default_versions_when_they_differ() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v20.19.0", "v22.14.0"]);
+        let mut runner = FakeRunner {
+            outputs: VecDeque::from([
+                Ok(CommandOutput::success("v20.19.0\n")),
+                Ok(CommandOutput::success("v22.14.0\n")),
+            ]),
+            calls: vec![],
+        };
+
+        let versions = list_node_versions_at(&nvm_dir, &mut runner).unwrap();
+
+        assert_eq!(
+            versions,
+            vec![
+                VersionEntry {
+                    name: "v18.20.0".into(),
+                    current: false,
+                },
+                VersionEntry {
+                    name: "v20.19.0".into(),
+                    current: true,
+                },
+                VersionEntry {
+                    name: "v22.14.0".into(),
+                    current: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn nvm_listing_keeps_working_when_the_default_alias_is_missing() {
+        let (_temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v22.14.0"]);
+        let mut runner = FakeRunner {
+            outputs: VecDeque::from([
+                Ok(CommandOutput::success("v22.14.0\n")),
+                Ok(CommandOutput::failure(
+                    "N/A: version `default -> N/A` is not yet installed",
+                )),
+            ]),
+            calls: vec![],
+        };
+
+        let versions = list_node_versions_at(&nvm_dir, &mut runner).unwrap();
+
+        assert_eq!(
+            versions,
+            vec![
+                VersionEntry {
+                    name: "v18.20.0".into(),
+                    current: false,
+                },
+                VersionEntry {
+                    name: "v22.14.0".into(),
+                    current: true,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -496,20 +659,24 @@ mod tests {
     fn uninstall_rejects_a_stale_nvm_selection_after_relisting() {
         let (_temp, nvm_dir) = nvm_fixture(&["v20.19.0"]);
         let mut runner = FakeRunner {
-            outputs: VecDeque::from([Ok(CommandOutput::success("v20.19.0\n"))]),
+            outputs: VecDeque::from([
+                Ok(CommandOutput::success("v20.19.0\n")),
+                Ok(CommandOutput::failure("N/A")),
+            ]),
             calls: vec![],
         };
         let request = UninstallVersionRequest {
             kind: VersionKind::Nvm,
             version: "v18.20.0".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         let result = uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
 
         assert_eq!(result.status, "failed");
         assert!(result.message.contains("已不存在"));
-        assert_eq!(runner.calls.len(), 1, "no uninstall command should run");
+        assert_eq!(runner.calls.len(), 2, "no uninstall command should run");
     }
 
     #[test]
@@ -518,6 +685,7 @@ mod tests {
         let mut runner = FakeRunner {
             outputs: VecDeque::from([
                 Ok(CommandOutput::success("v20.19.0\n")),
+                Ok(CommandOutput::failure("N/A")),
                 Ok(CommandOutput::success("Uninstalled node v18.20.0\n")),
             ]),
             calls: vec![],
@@ -526,19 +694,47 @@ mod tests {
             kind: VersionKind::Nvm,
             version: "v18.20.0".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         let result = uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
 
         assert_eq!(result.status, "success");
-        assert_eq!(runner.calls.len(), 2);
-        assert_eq!(runner.calls[1].0, "bash");
-        assert_eq!(runner.calls[1].1[0], "-lc");
-        assert!(runner.calls[1].1[1].contains("nvm uninstall \"$2\""));
-        assert_eq!(runner.calls[1].1[2], "cleanup-hub");
-        assert_eq!(runner.calls[1].1[3], nvm_dir.to_string_lossy());
-        assert_eq!(runner.calls[1].1[4], "v18.20.0");
-        assert!(!runner.calls[1].1[1].contains("v18.20.0"));
+        assert_eq!(runner.calls.len(), 3);
+        assert_eq!(runner.calls[2].0, "bash");
+        assert_eq!(runner.calls[2].1[0], "-lc");
+        assert!(runner.calls[2].1[1].contains("nvm uninstall \"$2\""));
+        assert_eq!(runner.calls[2].1[2], "cleanup-hub");
+        assert_eq!(runner.calls[2].1[3], nvm_dir.to_string_lossy());
+        assert_eq!(runner.calls[2].1[4], "v18.20.0");
+        assert!(!runner.calls[2].1[1].contains("v18.20.0"));
+    }
+
+    #[test]
+    fn nvm_uninstall_is_skipped_when_an_exclusion_overlaps_its_effective_home() {
+        let (temp, nvm_dir) = nvm_fixture(&["v18.20.0", "v22.14.0"]);
+        let request = UninstallVersionRequest {
+            kind: VersionKind::Nvm,
+            version: "v18.20.0".into(),
+            acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![nvm_dir.join("versions/node/v18.20.0").display().to_string()],
+        };
+        let mut runner = FakeRunner {
+            outputs: VecDeque::new(),
+            calls: vec![],
+        };
+
+        let result = uninstall_version_with_runner_in(
+            &request,
+            &mut runner,
+            Some(&nvm_dir),
+            temp.path(),
+            None,
+        );
+
+        assert_eq!(result.status, "skipped");
+        assert!(result.message.contains("排除路径"));
+        assert!(runner.calls.is_empty());
     }
 
     #[test]
@@ -556,6 +752,7 @@ mod tests {
             kind: VersionKind::Rustup,
             version: "nightly-aarch64-apple-darwin".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         let result = uninstall_version_with_runner(&request, &mut runner);
@@ -576,6 +773,77 @@ mod tests {
     }
 
     #[test]
+    fn rustup_uninstall_is_skipped_when_an_exclusion_overlaps_rustup_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let request = UninstallVersionRequest {
+            kind: VersionKind::Rustup,
+            version: "nightly-aarch64-apple-darwin".into(),
+            acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec!["~/.rustup/toolchains/nightly-aarch64-apple-darwin".into()],
+        };
+        let mut runner = FakeRunner {
+            outputs: VecDeque::new(),
+            calls: vec![],
+        };
+
+        let result =
+            uninstall_version_with_runner_in(&request, &mut runner, None, temp.path(), None);
+
+        assert_eq!(result.status, "skipped");
+        assert!(result.message.contains("排除路径"));
+        assert!(runner.calls.is_empty());
+    }
+
+    #[test]
+    fn version_uninstall_fails_closed_on_an_invalid_exclusion() {
+        let temp = tempfile::tempdir().unwrap();
+        let request = UninstallVersionRequest {
+            kind: VersionKind::Rustup,
+            version: "nightly-aarch64-apple-darwin".into(),
+            acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec!["../unsafe".into()],
+        };
+        let mut runner = FakeRunner {
+            outputs: VecDeque::new(),
+            calls: vec![],
+        };
+
+        let result =
+            uninstall_version_with_runner_in(&request, &mut runner, None, temp.path(), None);
+
+        assert_eq!(result.status, "failed");
+        assert!(result.message.contains("无效排除路径"));
+        assert!(runner.calls.is_empty());
+    }
+
+    #[test]
+    fn rustup_uninstall_uses_rustup_home_for_exclusion_matching() {
+        let temp = tempfile::tempdir().unwrap();
+        let rustup_home = temp.path().join("custom-rustup");
+        let request = UninstallVersionRequest {
+            kind: VersionKind::Rustup,
+            version: "nightly-aarch64-apple-darwin".into(),
+            acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![rustup_home.join("downloads").display().to_string()],
+        };
+        let mut runner = FakeRunner {
+            outputs: VecDeque::new(),
+            calls: vec![],
+        };
+
+        let result = uninstall_version_with_runner_in(
+            &request,
+            &mut runner,
+            None,
+            temp.path(),
+            Some(&rustup_home),
+        );
+
+        assert_eq!(result.status, "skipped");
+        assert!(runner.calls.is_empty());
+    }
+
+    #[test]
     fn nvm_rejects_shell_characters_before_running_any_command() {
         let mut runner = FakeRunner {
             outputs: VecDeque::new(),
@@ -585,6 +853,7 @@ mod tests {
             kind: VersionKind::Nvm,
             version: "v22;rm -rf ~".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         let result = uninstall_version_with_runner(&request, &mut runner);
@@ -600,6 +869,7 @@ mod tests {
         let mut runner = FakeRunner {
             outputs: VecDeque::from([
                 Ok(CommandOutput::success("v22.14.0\n")),
+                Ok(CommandOutput::failure("N/A")),
                 Ok(CommandOutput::success("")),
             ]),
             calls: vec![],
@@ -608,6 +878,7 @@ mod tests {
             kind: VersionKind::Nvm,
             version: "v18.20.0".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         uninstall_version_with_runner_at(&request, &mut runner, Some(&nvm_dir));
@@ -643,6 +914,7 @@ mod tests {
                 kind: VersionKind::Rustup,
                 version: "nightly-aarch64-apple-darwin".into(),
                 acknowledgement: "rebuild-understood".into(),
+                excluded_paths: vec![],
             },
             &mut uninstall_runner,
         );

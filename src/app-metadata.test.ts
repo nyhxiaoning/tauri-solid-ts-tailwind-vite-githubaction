@@ -8,4 +8,12 @@ describe('application metadata', () => {
     expect(APP_VERSION).toBe(packageMetadata.version)
     expect(tauriConfig.version).toBe('../package.json')
   })
+
+  it('identifies the product instead of the original starter template', () => {
+    expect(packageMetadata.name).toBe('macos-cleanup-hub')
+    expect(packageMetadata.description).toBe(
+      'A confirmation-first macOS disk cleanup desktop app built with Tauri and SolidJS'
+    )
+    expect(tauriConfig.productName).toBe('macOS Cleanup Hub')
+  })
 })

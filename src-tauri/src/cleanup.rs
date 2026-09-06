@@ -611,6 +611,27 @@ mod tests {
     }
 
     #[test]
+    fn external_registry_actions_are_skipped_when_an_exclusion_is_configured() {
+        let home = test_home("external-policy");
+        std::fs::create_dir_all(home.join("keep")).unwrap();
+
+        for id in ["l1-15-docker", "l1-16-brewcleanup"] {
+            let request = RunActionRequest {
+                id: id.into(),
+                acknowledgement: "confirmed".into(),
+                excluded_paths: vec!["~/keep".into()],
+            };
+
+            let result = run_action_with_home(&request, &home, |_| IdeUseStatus::NotRunning);
+
+            assert_eq!(result.status, "skipped", "action: {id}");
+            assert!(result.message.contains("外部命令"), "action: {id}");
+        }
+
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
     fn run_action_maps_a_missing_registered_target_to_skipped() {
         let home = test_home("missing-target");
         let request = RunActionRequest {
@@ -833,6 +854,13 @@ where
         match process::preflight_operation(operation, &request.excluded_paths, home) {
             Ok(process::OperationPreflight::Ready(_))
             | Ok(process::OperationPreflight::External) => {}
+            Ok(process::OperationPreflight::ExternalExcluded) => {
+                return action_result(
+                    &action,
+                    "skipped",
+                    "已设置排除路径，外部命令影响范围无法安全核对，已跳过".into(),
+                );
+            }
             Ok(process::OperationPreflight::Missing(path)) => {
                 return action_result(
                     &action,
@@ -869,6 +897,15 @@ where
                     &action,
                     "skipped",
                     format!("清理目标与排除路径重叠: {}", exclusion.display()),
+                );
+                result.before_gb = before_gb;
+                return result;
+            }
+            Ok(process::OperationExecution::ExcludedByPolicy) => {
+                let mut result = action_result(
+                    &action,
+                    "skipped",
+                    "已设置排除路径，外部命令影响范围无法安全核对，已跳过".into(),
                 );
                 result.before_gb = before_gb;
                 return result;

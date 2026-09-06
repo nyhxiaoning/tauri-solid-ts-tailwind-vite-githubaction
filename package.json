@@ -1,7 +1,7 @@
 {
-  "name": "tauri-solid-tailwind-ts-vite-template",
+  "name": "macos-cleanup-hub",
   "version": "2.0.0",
-  "author": "AR10",
+  "description": "A confirmation-first macOS disk cleanup desktop app built with Tauri and SolidJS",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setExcludedPaths } from '../store'
 import { listNodeVersions, uninstallVersion, type CleanupAction } from '../tauri'
 import InteractiveView from './InteractiveView'
 
@@ -26,6 +27,7 @@ describe('InteractiveView version safety', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    setExcludedPaths([])
     vi.mocked(listNodeVersions).mockResolvedValue([
       { name: 'v18.20.0', current: false },
       { name: 'v22.14.0', current: true }
@@ -51,6 +53,7 @@ describe('InteractiveView version safety', () => {
     const currentVersion = screen.getByRole('checkbox', { name: /v22\.14\.0/ })
     expect((oldVersion as HTMLInputElement).checked).toBe(false)
     expect(currentVersion).toHaveProperty('disabled', true)
+    expect(screen.getByText('当前/默认')).toBeTruthy()
     expect(screen.getByText('已选 0 个')).toBeTruthy()
 
     fireEvent.click(oldVersion)
@@ -67,7 +70,8 @@ describe('InteractiveView version safety', () => {
       expect(uninstallVersion).toHaveBeenCalledWith({
         kind: 'nvm',
         version: 'v18.20.0',
-        acknowledgement: 'rebuild-understood'
+        acknowledgement: 'rebuild-understood',
+        excluded_paths: []
       })
     )
   })
@@ -88,6 +92,32 @@ describe('InteractiveView version safety', () => {
     expect(alert.textContent).toContain('版本列表读取失败')
     expect(alert.textContent).toContain('nvm command timed out')
     expect(screen.queryByText('未检测到已安装的版本。')).toBeNull()
+  })
+
+  it('sends persisted exclusions with an uninstall request', async () => {
+    setExcludedPaths(['~/.nvm/versions/node/v18.20.0'])
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={vi.fn()}
+      />
+    ))
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (1)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+
+    await waitFor(() =>
+      expect(uninstallVersion).toHaveBeenCalledWith({
+        kind: 'nvm',
+        version: 'v18.20.0',
+        acknowledgement: 'rebuild-understood',
+        excluded_paths: ['~/.nvm/versions/node/v18.20.0']
+      })
+    )
   })
 
   it('reports each uninstall result before the sequence continues', async () => {
@@ -159,6 +189,34 @@ describe('InteractiveView version safety', () => {
       })
     )
     expect(await screen.findByText(/nvm uninstall failed/)).toBeTruthy()
+  })
+
+  it('renders an exclusion-blocked uninstall as skipped instead of failed', async () => {
+    const skippedResult = {
+      version: 'v18.20.0',
+      status: 'skipped' as const,
+      message: '版本目录与排除路径重叠，已跳过卸载'
+    }
+    vi.mocked(uninstallVersion).mockResolvedValueOnce(skippedResult)
+    const onResult = vi.fn()
+
+    render(() => (
+      <InteractiveView
+        action={action}
+        onBack={vi.fn()}
+        onDone={vi.fn()}
+        onResult={onResult}
+      />
+    ))
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: /v18\.20\.0/ }))
+    fireEvent.click(screen.getByRole('button', { name: '卸载已选 (1)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我已了解/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认卸载' }))
+
+    const feedback = await screen.findByText(/⊘.*已跳过卸载/)
+    expect(feedback.className).toContain('text-amber-700')
+    expect(onResult).toHaveBeenCalledWith(skippedResult)
   })
 
   it('locks both close controls only while an uninstall request is in flight', async () => {

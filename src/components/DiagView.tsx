@@ -27,13 +27,6 @@ const DiagView: Component = () => {
     void load()
   })
 
-  const ReportSection: Component = () => {
-    const currentReport = report()
-    return currentReport ? (
-      <DiagReport report={currentReport} onExport={exportReport} />
-    ) : null
-  }
-
   const exportReport = () => {
     const r = report()
     if (!r) return
@@ -91,7 +84,9 @@ const DiagView: Component = () => {
         <div class="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error()}</div>
       </Show>
 
-      <ReportSection />
+      <Show when={report()} keyed>
+        {currentReport => <DiagReport report={currentReport} onExport={exportReport} />}
+      </Show>
     </div>
   )
 }

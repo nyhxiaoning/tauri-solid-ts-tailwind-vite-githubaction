@@ -162,6 +162,12 @@ const MenuView: Component<MenuViewProps> = props => {
 
   const isRunning = () => batchState() === 'running' || batchState() === 'stopping'
 
+  const handleBack = () => {
+    if (isRunning() || runningId() !== null) return
+    clearAll()
+    navigate.to('menu')
+  }
+
   const estimateTotal = () =>
     selectedActions().reduce((total, action) => total + action.estimate_gb, 0)
 
@@ -250,8 +256,9 @@ const MenuView: Component<MenuViewProps> = props => {
       <div class="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate.to('menu')}
-          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          onClick={handleBack}
+          disabled={isRunning() || runningId() !== null}
+          class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
         >
           ← 返回
         </button>

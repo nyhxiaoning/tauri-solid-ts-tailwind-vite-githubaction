@@ -1,4 +1,5 @@
 import { Component, createSignal, For, onMount, Show } from 'solid-js'
+import { excludedPaths } from '../store'
 import {
   listNodeVersions,
   listRustToolchains,
@@ -66,7 +67,8 @@ const InteractiveView: Component<InteractiveViewProps> = props => {
     return uninstallVersion({
       kind: props.action.id === 's2-03-nvm' ? 'nvm' : 'rustup',
       version: name,
-      acknowledgement
+      acknowledgement,
+      excluded_paths: excludedPaths()
     })
   }
 
@@ -113,7 +115,9 @@ const InteractiveView: Component<InteractiveViewProps> = props => {
         <div class="mb-4 flex items-center justify-between">
           <div>
             <h3 class="text-lg font-semibold text-gray-900">{title}</h3>
-            <p class="text-xs text-gray-500">选择要删除的版本（当前版本已默认排除）</p>
+            <p class="text-xs text-gray-500">
+              选择要删除的版本（当前/默认版本已自动保护）
+            </p>
           </div>
           <button
             type="button"
@@ -162,7 +166,7 @@ const InteractiveView: Component<InteractiveViewProps> = props => {
                   <span class="font-mono text-sm text-gray-800">{v.name}</span>
                   <Show when={v.current}>
                     <span class="ml-auto rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
-                      当前
+                      当前/默认
                     </span>
                   </Show>
                 </label>
@@ -176,10 +180,16 @@ const InteractiveView: Component<InteractiveViewProps> = props => {
             <For each={results()}>
               {r => (
                 <div
-                  class={`rounded px-2 py-1 text-xs ${r.status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}
+                  class={`rounded px-2 py-1 text-xs ${
+                    r.status === 'success'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : r.status === 'skipped'
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-red-50 text-red-700'
+                  }`}
                 >
-                  {r.status === 'success' ? '✓' : '✗'} {r.version}{' '}
-                  {r.status === 'success' ? '已卸载' : r.message}
+                  {r.status === 'success' ? '✓' : r.status === 'skipped' ? '⊘' : '✗'}{' '}
+                  {r.version} {r.status === 'success' ? '已卸载' : r.message}
                 </div>
               )}
             </For>

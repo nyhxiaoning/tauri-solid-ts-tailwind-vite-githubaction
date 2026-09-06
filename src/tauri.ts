@@ -66,7 +66,7 @@ export interface VersionEntry {
 
 export interface UninstallResult {
   version: string
-  status: 'success' | 'failed'
+  status: 'success' | 'failed' | 'skipped'
   message: string
 }
 
@@ -76,6 +76,7 @@ export interface UninstallVersionRequest {
   kind: VersionKind
   version: string
   acknowledgement: string
+  excluded_paths: string[]
 }
 
 export type IdeUseResult =

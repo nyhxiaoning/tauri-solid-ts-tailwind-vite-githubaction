@@ -49,7 +49,8 @@ const result = (item: CleanupAction): ActionResult => ({
 
 const renderMenu = (
   tier: CleanupAction['tier'] = 'one',
-  onActionComplete: (result: ActionResult | UninstallResult) => void = vi.fn()
+  onActionComplete: (result: ActionResult | UninstallResult) => void = vi.fn(),
+  onSelectedChange: (estimateGb: number) => void = vi.fn()
 ) =>
   render(() => (
     <RouterProvider>
@@ -58,7 +59,7 @@ const renderMenu = (
         title="清理"
         subtitle="测试菜单"
         icon="🧹"
-        onSelectedChange={vi.fn()}
+        onSelectedChange={onSelectedChange}
         onActionComplete={onActionComplete}
       />
     </RouterProvider>
@@ -353,6 +354,10 @@ describe('MenuView batch cleanup', () => {
     await waitFor(() => expect(runAction).toHaveBeenCalledTimes(1))
 
     fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect(screen.getByRole('button', { name: '← 返回' })).toHaveProperty(
+      'disabled',
+      true
+    )
     finishFirst(result(first))
 
     expect(await screen.findByText('已停止：完成 1 项，剩余 1 项')).toBeTruthy()
@@ -365,5 +370,38 @@ describe('MenuView batch cleanup', () => {
       'checked',
       true
     )
+  })
+
+  it('disables Back while a batch action is still running', async () => {
+    const item = action({ id: 'slow', name: '慢速项' })
+    vi.mocked(listActions).mockResolvedValue([item])
+    vi.mocked(runAction).mockReturnValue(new Promise(() => undefined))
+    renderMenu()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择 慢速项' }))
+    fireEvent.click(screen.getByRole('button', { name: '🚀 一键执行已勾选 (1)' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    await waitFor(() => expect(runAction).toHaveBeenCalledTimes(1))
+
+    expect(screen.getByRole('button', { name: '← 返回' })).toHaveProperty(
+      'disabled',
+      true
+    )
+  })
+
+  it('clears the selected estimate before leaving an idle menu', async () => {
+    const onSelectedChange = vi.fn()
+    renderMenu('one', vi.fn(), onSelectedChange)
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择 npm 缓存' }))
+    expect(onSelectedChange).toHaveBeenLastCalledWith(1.5)
+
+    fireEvent.click(screen.getByRole('button', { name: '← 返回' }))
+
+    expect(screen.getByRole('checkbox', { name: '选择 npm 缓存' })).toHaveProperty(
+      'checked',
+      false
+    )
+    expect(onSelectedChange).toHaveBeenLastCalledWith(0)
   })
 })

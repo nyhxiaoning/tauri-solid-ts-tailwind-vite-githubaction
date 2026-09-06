@@ -263,6 +263,7 @@ mod tests {
             kind: cleanup::VersionKind::Nvm,
             version: "invalid".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
 
         let result = uninstall_version_and_record(&request, &path);
@@ -285,6 +286,7 @@ mod tests {
             kind: VersionKind::Nvm,
             version: "v18.20.0".into(),
             acknowledgement: "rebuild-understood".into(),
+            excluded_paths: vec![],
         };
         let uninstall_result = UninstallResult {
             version: request.version.clone(),
