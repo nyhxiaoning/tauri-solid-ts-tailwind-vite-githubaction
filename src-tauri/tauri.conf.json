@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Todo",
+  "productName": "todo-everything",
   "version": "2.0.0",
   "identifier": "com.henryheng.todo",
   "build": {
