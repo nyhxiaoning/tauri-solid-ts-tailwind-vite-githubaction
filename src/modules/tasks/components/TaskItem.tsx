@@ -1,5 +1,5 @@
+import AnchoredMenu from '@/components/ui/AnchoredMenu'
 import Checkbox from '@/components/ui/Checkbox'
-import { useClickOutside } from '@/hooks/useClickOutside'
 import { useNow } from '@/hooks/useNow'
 import { LIST_DOT_COLORS } from '@/modules/lists/components/ListNav'
 import { getList, sortedLists } from '@/stores/list.store'
@@ -51,10 +51,9 @@ interface TaskItemProps {
 /** 任务行:勾选、优先级圆点、标题、描述摘要、清单/日期角标、行操作菜单 */
 export default function TaskItem(props: TaskItemProps) {
   const now: () => Dayjs = useNow()
-  const [rowRef, setRowRef] = createSignal<HTMLLIElement>()
+  const [menuBtn, setMenuBtn] = createSignal<HTMLButtonElement>()
   const [menuOpen, setMenuOpen] = createSignal(false)
   const [menuPage, setMenuPage] = createSignal<'actions' | 'move'>('actions')
-  useClickOutside(rowRef, () => setMenuOpen(false))
 
   /** 移动目标:收件箱 + 其他清单 */
   const moveTargets = (): { id: string | null; name: string; color: ListColor }[] => [
@@ -107,9 +106,8 @@ export default function TaskItem(props: TaskItemProps) {
 
   return (
     <li
-      ref={setRowRef}
       class={cn(
-        'group relative flex items-start gap-2.5 px-3 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60',
+        'group flex items-start gap-2.5 px-3 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60',
         isSelected() && 'bg-primary-50 dark:bg-primary-500/10'
       )}
     >
@@ -180,80 +178,80 @@ export default function TaskItem(props: TaskItemProps) {
 
       {/* 行操作菜单(hover 显示;多选模式下隐藏) */}
       <Show when={!inSelectionMode()}>
-        <div class="relative">
-          <button
-            type="button"
-            onClick={() => {
-              setMenuPage('actions')
-              setMenuOpen(!menuOpen())
-            }}
-            class={cn(
-              'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
-              'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
-              menuOpen() && 'opacity-100'
-            )}
-            aria-label="更多操作"
-          >
-            <IconEllipsisVertical size={16} />
-          </button>
-          <Show when={menuOpen()}>
-            <div
-              class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
-              role="menu"
-            >
-              <Show
-                when={menuPage() === 'move'}
-                fallback={
-                  <For each={actions()}>
-                    {item => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false)
-                          item.onSelect()
-                        }}
-                        class={cn(
-                          'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
-                          item.danger
-                            ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
-                            : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                        )}
-                      >
-                        {item.icon}
-                        {item.label}
-                      </button>
-                    )}
-                  </For>
-                }
-              >
-                <For each={moveTargets()}>
-                  {target => (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        moveTasksToList([props.task.id], target.id)
-                        toast('success', `已移动到「${target.name}」`)
-                      }}
-                      class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                    >
-                      <span
-                        class={cn(
-                          'h-2 w-2 shrink-0 rounded-full',
-                          LIST_DOT_COLORS[target.color]
-                        )}
-                      />
-                      <span class="min-w-0 truncate">{target.name}</span>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </Show>
-        </div>
+        <button
+          type="button"
+          ref={setMenuBtn}
+          onClick={() => {
+            setMenuPage('actions')
+            setMenuOpen(!menuOpen())
+          }}
+          class={cn(
+            'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
+            'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
+            menuOpen() && 'opacity-100'
+          )}
+          aria-label="更多操作"
+          aria-haspopup="menu"
+        >
+          <IconEllipsisVertical size={16} />
+        </button>
       </Show>
+      <AnchoredMenu
+        open={menuOpen()}
+        anchor={menuBtn}
+        onClose={() => setMenuOpen(false)}
+        widthClass="w-32"
+      >
+        <Show
+          when={menuPage() === 'move'}
+          fallback={
+            <For each={actions()}>
+              {item => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    item.onSelect()
+                  }}
+                  class={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                    item.danger
+                      ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                  )}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              )}
+            </For>
+          }
+        >
+          <For each={moveTargets()}>
+            {target => (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false)
+                  moveTasksToList([props.task.id], target.id)
+                  toast('success', `已移动到「${target.name}」`)
+                }}
+                class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <span
+                  class={cn(
+                    'h-2 w-2 shrink-0 rounded-full',
+                    LIST_DOT_COLORS[target.color]
+                  )}
+                />
+                <span class="min-w-0 truncate">{target.name}</span>
+              </button>
+            )}
+          </For>
+        </Show>
+      </AnchoredMenu>
     </li>
   )
 }

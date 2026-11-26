@@ -1,4 +1,4 @@
-import { useClickOutside } from '@/hooks/useClickOutside'
+import AnchoredMenu from '@/components/ui/AnchoredMenu'
 import ListFormDialog from '@/modules/lists/components/ListFormDialog'
 import { deleteList, sortedLists } from '@/stores/list.store'
 import { closeNav, openConfirm, toast } from '@/stores/ui.store'
@@ -33,8 +33,6 @@ export default function ListNav() {
   const [formOpen, setFormOpen] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | undefined>()
   const [reorderOpen, setReorderOpen] = createSignal(false)
-  const [navRef, setNavRef] = createSignal<HTMLDivElement>()
-  useClickOutside(navRef, () => setOpenMenuId(null))
   const [openMenuId, setOpenMenuId] = createSignal<string | null>(null)
 
   const requestDelete = (id: string, name: string) => {
@@ -52,7 +50,7 @@ export default function ListNav() {
   }
 
   return (
-    <div class="mt-4" ref={setNavRef}>
+    <div class="mt-4">
       <div class="mb-1 flex items-center justify-between px-3">
         <span class="text-xs font-medium text-gray-400">我的清单</span>
         <div class="flex items-center gap-0.5">
@@ -78,38 +76,43 @@ export default function ListNav() {
         </div>
       </div>
       <For each={lists()}>
-        {list => (
-          <div class="group relative mx-2 flex items-center">
-            <A
-              href={`/lists/${list.id}`}
-              onClick={closeNav}
-              class={cn(
-                'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-                'hover:bg-gray-100 dark:hover:bg-gray-800'
-              )}
-              activeClass="bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300"
-            >
-              <span
-                class={cn('h-2 w-2 shrink-0 rounded-full', LIST_DOT_COLORS[list.color])}
-              />
-              <span class="min-w-0 flex-1 truncate">{list.name}</span>
-            </A>
-            <button
-              type="button"
-              onClick={() => setOpenMenuId(openMenuId() === list.id ? null : list.id)}
-              class={cn(
-                'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
-                'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-800',
-                openMenuId() === list.id && 'opacity-100'
-              )}
-              aria-label={`清单「${list.name}」操作`}
-            >
-              <IconEllipsisVertical size={14} />
-            </button>
-            <Show when={openMenuId() === list.id}>
-              <div
-                class="absolute right-1 top-8 z-50 w-28 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
-                role="menu"
+        {list => {
+          let menuBtn: HTMLButtonElement | undefined
+          return (
+            <div class="group mx-2 flex items-center">
+              <A
+                href={`/lists/${list.id}`}
+                onClick={closeNav}
+                class={cn(
+                  'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                  'hover:bg-gray-100 dark:hover:bg-gray-800'
+                )}
+                activeClass="bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300"
+              >
+                <span
+                  class={cn('h-2 w-2 shrink-0 rounded-full', LIST_DOT_COLORS[list.color])}
+                />
+                <span class="min-w-0 flex-1 truncate">{list.name}</span>
+              </A>
+              <button
+                type="button"
+                ref={el => (menuBtn = el)}
+                onClick={() => setOpenMenuId(openMenuId() === list.id ? null : list.id)}
+                class={cn(
+                  'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
+                  'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-800',
+                  openMenuId() === list.id && 'opacity-100'
+                )}
+                aria-label={`清单「${list.name}」操作`}
+                aria-haspopup="menu"
+              >
+                <IconEllipsisVertical size={14} />
+              </button>
+              <AnchoredMenu
+                open={openMenuId() === list.id}
+                anchor={() => menuBtn}
+                onClose={() => setOpenMenuId(null)}
+                widthClass="w-28"
               >
                 <button
                   type="button"
@@ -136,10 +139,10 @@ export default function ListNav() {
                   <IconTrash size={14} />
                   删除
                 </button>
-              </div>
-            </Show>
-          </div>
-        )}
+              </AnchoredMenu>
+            </div>
+          )
+        }}
       </For>
       <Show when={lists().length === 0}>
         <p class="px-3 py-2 text-xs text-gray-400">暂无清单,点击 + 创建</p>
