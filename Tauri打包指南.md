@@ -150,15 +150,37 @@ src-tauri/target/<模式>/bundle/android/
 - `tauri.conf.json` 里 `build.beforeBuildCommand` 会照常执行(先打前端),无需为安卓单独配置;
 - 用到的 tauri 插件(如 notification)需同时具备 Rust crate 与 npm 包,且满足第 0 节的版本对齐。
 
-### 2.5 签名(正式分发才需要)
+### 2.5 签名(不签名装不上!)
 
-`tauri android build --apk --debug` 这类 **debug 构建**用自动生成的 debug 签名,可直接装机;默认的 release 构建未签名(文件名带 `unsigned`),需要配置 keystore 才能分发:
+**release APK 默认未签名**(文件名带 `unsigned`),安装时手机报「解析包出现错误 / packageInfo is null」——Android 拒绝安装未签名包。三档方案:
+
+**① 个人自用(最省事):release 复用 debug 证书。** 在 `src-tauri/gen/android/app/build.gradle.kts` 的 release 构建块中加一行:
+
+```kotlin
+getByName("release") {
+    // ...
+    signingConfig = signingConfigs.getByName("debug")
+}
+```
+
+debug keystore(`~/.android/debug.keystore`,gradle 首次构建自动生成,缺失可手动生成):
+
+```bash
+keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
+  -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+```
+
+同一台机器上签名一致,应用可覆盖升级。**上架 Google Play 前必须换成独立 keystore**。
+
+**② 正式分发:独立 keystore + keystore.properties。**
 
 ```bash
 keytool -genkey -v -keystore release.keystore -alias todo -keyalg RSA -keysize 2048 -validity 10000
 ```
 
 然后按 Tauri 官方文档在 `src-tauri/gen/android/keystore.properties` 配置签名信息(该目录由 init 生成,**不要提交进 git** 时包含本地签名文件)。
+
+**③ 只为装机调试:直接出 debug 变体**,无需任何配置:`bun run build:android:apk -- --debug`(产物 `app-universal-release-debug.apk`,isDebuggable,性能略低于 release)。
 
 ### 2.6 国内网络:阿里云镜像与代理
 
@@ -195,7 +217,7 @@ systemProp.https.proxyPort=7890
 | Android 构建 `Unsupported class file major version` / Gradle 报 JDK 版本 | JAVA_HOME 指向了 JDK 8,切到 17+ |
 | Android 构建 `NDK not located` / `NDK_HOME` | NDK 未装或环境变量未指向 `ndk/<版本号>` 目录 |
 | `error: target is not installed` (aarch64-linux-android) | `rustup target add aarch64-linux-android` |
-| 产出 `app-universal-release-unsigned.apk`,安装到手机被拒绝 | release APK 未签名:装机调试加 `-- --debug`,分发按 2.5 节配 keystore |
+| 产出 `app-universal-release-unsigned.apk`,安装报「解析包出现错误 / packageInfo is null」 | release APK 未签名,Android 拒绝解析:按 2.5 节配置签名(个人自用可让 release 复用 debug 证书) |
 | 构建提示 `Blocking waiting for file lock` | 另一个 Gradle 构建进程持有工程锁,排队等待即可;长时间不动时 `gradlew --stop` 后重试 |
 | gradle 依赖下载失败:`Could not GET dl.google.com/...` 超时,或 `Connect to 127.0.0.1:xxxx failed: Connection refused` | Gradle 代理失效或网络不通:启动代理软件,或按 2.6 节加阿里云镜像并注释掉 `~/.gradle/gradle.properties` 里的死代理 |
 | macOS 下载后「已损坏,无法打开」 | 未签名产物被 Gatekeeper 拦:`xattr -cr <应用路径>` 或右键打开 |
