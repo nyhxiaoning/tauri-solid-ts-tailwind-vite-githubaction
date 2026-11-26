@@ -7,7 +7,9 @@
  * 存在任意一项「错误」时以退出码 1 结束并阻止构建;「警告」仅提示,不阻断。
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import net from 'node:net';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,6 +146,60 @@ if (existsSync(genDir)) {
   ok('Android 工程已初始化(src-tauri/gen/android)');
 } else {
   err('尚未生成 Android 工程(src-tauri/gen/android 不存在)', '先执行一次:bun run init:android');
+}
+
+// ── 6. Gradle 代理配置是否可用 ───────────────────────────────────────
+// Gradle 用户级(~/.gradle/gradle.properties,优先)与项目级均可能配置
+// systemProp.*.proxy*;代理未启动时所有依赖下载都会 Connection refused。
+function parseGradleProxy(file) {
+  if (!existsSync(file)) return null;
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const props = {};
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i > 0) props[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+  }
+  const host = props['systemProp.http.proxyHost'] || props['systemProp.https.proxyHost'];
+  const port = Number(props['systemProp.http.proxyPort'] || props['systemProp.https.proxyPort'] || 0);
+  return host && port ? { host, port } : null;
+}
+
+function tcpProbe(host, port, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const finish = (result) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+const gradleUserHome = process.env.GRADLE_USER_HOME || join(homedir(), '.gradle');
+for (const file of [
+  join(gradleUserHome, 'gradle.properties'),
+  join(ROOT, 'src-tauri', 'gen', 'android', 'gradle.properties'),
+]) {
+  const proxy = parseGradleProxy(file);
+  if (!proxy) continue;
+  if (await tcpProbe(proxy.host, proxy.port)) {
+    ok(`Gradle 代理 ${proxy.host}:${proxy.port} 可达(${file})`);
+  } else {
+    err(
+      `Gradle 配置了代理 ${proxy.host}:${proxy.port}(${file}),但该端口无服务监听,所有依赖下载都会失败`,
+      `启动对应的代理软件;或注释掉 ${file} 中的 systemProp.*proxy* 各行,并在项目 gradle 仓库前加阿里云镜像(见 Tauri打包指南.md 2.6 节)`,
+    );
+  }
 }
 
 // ── 输出结果 ─────────────────────────────────────────────────────────

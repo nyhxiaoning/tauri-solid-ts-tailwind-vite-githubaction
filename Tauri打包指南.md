@@ -157,6 +157,32 @@ keytool -genkey -v -keystore release.keystore -alias todo -keyalg RSA -keysize 2
 
 然后按 Tauri 官方文档在 `src-tauri/gen/android/keystore.properties` 配置签名信息(该目录由 init 生成,**不要提交进 git** 时包含本地签名文件)。
 
+### 2.6 国内网络:阿里云镜像与代理
+
+Gradle 构建需从 `dl.google.com` / `repo.maven.apache.org` 下载 AGP、Kotlin 等依赖,国内无代理时常超时或被墙。两种方案任选其一:
+
+**方案 A(推荐):项目内阿里云镜像,不依赖代理。** 在 `src-tauri/gen/android/build.gradle.kts` 的 `buildscript` 与 `allprojects` 两处 repositories、以及 `buildSrc/build.gradle.kts` 的 repositories 中,**镜像放最前,保留官方源兜底**:
+
+```kotlin
+repositories {
+    maven("https://maven.aliyun.com/repository/google")
+    maven("https://maven.aliyun.com/repository/central")
+    google()
+    mavenCentral()
+}
+```
+
+**方案 B:Gradle 走本地代理(Clash 等)。** `~/.gradle/gradle.properties`:
+
+```properties
+systemProp.http.proxyHost=127.0.0.1
+systemProp.http.proxyPort=7890
+systemProp.https.proxyHost=127.0.0.1
+systemProp.https.proxyPort=7890
+```
+
+注意两点:① Gradle 用户级配置优先于项目级,项目里覆盖不掉,只能改 `~/.gradle/gradle.properties` 本身;② **代理软件没启动时会 Connection refused,所有依赖下载全部失败**——不用代理时务必注释掉这几行。报错特征:`Connect to 127.0.0.1:xxxx failed: Connection refused`。本仓库的环境自检会扫描这两处 gradle.properties 并对代理端口做 TCP 探活,不可达即报错拦截。
+
 ## 3. 常见问题速查
 
 | 现象 | 原因 / 处理 |
@@ -166,6 +192,7 @@ keytool -genkey -v -keystore release.keystore -alias todo -keyalg RSA -keysize 2
 | Android 构建 `Unsupported class file major version` / Gradle 报 JDK 版本 | JAVA_HOME 指向了 JDK 8,切到 17+ |
 | Android 构建 `NDK not located` / `NDK_HOME` | NDK 未装或环境变量未指向 `ndk/<版本号>` 目录 |
 | `error: target is not installed` (aarch64-linux-android) | `rustup target add aarch64-linux-android` |
+| gradle 依赖下载失败:`Could not GET dl.google.com/...` 超时,或 `Connect to 127.0.0.1:xxxx failed: Connection refused` | Gradle 代理失效或网络不通:启动代理软件,或按 2.6 节加阿里云镜像并注释掉 `~/.gradle/gradle.properties` 里的死代理 |
 | macOS 下载后「已损坏,无法打开」 | 未签名产物被 Gatekeeper 拦:`xattr -cr <应用路径>` 或右键打开 |
 | 改了 `productName` 后找不到旧数据 | 正常:数据目录跟随 identifier/productName,老应用的数据不会自动迁移 |
 | 想出纯 H5(不套壳) | 直接 `bun run build`(vite build),产物 `dist/` 部署到任意静态服务器即可 |
