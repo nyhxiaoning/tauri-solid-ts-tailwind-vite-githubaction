@@ -27,7 +27,7 @@ const KIND_STYLES: Record<ToastKind, { icon: typeof IconInfo; class: string }> =
 export default function ToastContainer() {
   return (
     <Portal>
-      <div class="pointer-events-none fixed top-4 right-4 z-70 flex flex-col gap-2">
+      <div class="pointer-events-none fixed top-[calc(1rem+var(--edge-top))] right-4 z-70 flex flex-col gap-2">
         <For each={toasts}>
           {item => {
             const style = KIND_STYLES[item.kind]

@@ -50,6 +50,26 @@
     overscroll-behavior: none;
   }
 
+  /* Android 壳(edge-to-edge WebView)顶部避让:状态栏/挖孔区不可触摸,
+     整体下移 100px(浏览器/H5 端地址栏已天然避让,不启用) */
+  :root {
+    --edge-top: 0px;
+  }
+
+  html.android-edge {
+    --edge-top: 100px;
+  }
+
+  html.android-edge body {
+    padding-top: var(--edge-top);
+  }
+
+  /* fixed 定位的抽屉/面板不随文档流,需单独下移 */
+  html.android-edge .app-sidebar,
+  html.android-edge .task-detail-panel {
+    top: var(--edge-top);
+  }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;

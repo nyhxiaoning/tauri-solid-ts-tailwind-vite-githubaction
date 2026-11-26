@@ -76,7 +76,7 @@ export default function TaskDetailPanel() {
                 onClick={closeTaskDetail}
                 aria-hidden="true"
               />
-              <aside class="fixed inset-0 z-40 flex w-full flex-col bg-white dark:bg-gray-900 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0 md:border-l md:border-gray-200 dark:border-gray-800">
+              <aside class="task-detail-panel fixed inset-0 z-40 flex w-full flex-col bg-white dark:bg-gray-900 md:static md:inset-auto md:z-auto md:w-96 md:shrink-0 md:border-l md:border-gray-200 dark:border-gray-800">
                 <header class="flex h-12 shrink-0 items-center justify-between border-b border-gray-100 px-4 dark:border-gray-800">
                   <span class="flex items-center gap-2 text-xs text-gray-400">
                     <Show when={task()!.listId}>
