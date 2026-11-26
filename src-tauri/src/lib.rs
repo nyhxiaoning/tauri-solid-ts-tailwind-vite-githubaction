@@ -20,13 +20,10 @@ fn save_data(state: tauri::State<'_, AppState>, json: String) -> Result<(), Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let builder = tauri::Builder::default();
 
     #[cfg(debug_assertions)]
-    {
-        let devtools = tauri_plugin_devtools::init();
-        builder = builder.plugin(devtools);
-    }
+    let builder = builder.plugin(tauri_plugin_devtools::init());
 
     builder
         .plugin(tauri_plugin_notification::init())
