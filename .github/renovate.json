@@ -9,6 +9,12 @@
             "rangeStrategy": "bump"
         },
         {
+            "matchPackageNames": ["solid-js", "@solidjs/router", "@solidjs/meta"],
+            "matchUpdateTypes": ["minor"],
+            "automerge": false,
+            "prCreation": "immediate"
+        },
+        {
             "matchUpdateTypes": ["minor", "patch", "pin", "digest", "rollback"],
             "automerge": true,
             "automergeType": "branch"
