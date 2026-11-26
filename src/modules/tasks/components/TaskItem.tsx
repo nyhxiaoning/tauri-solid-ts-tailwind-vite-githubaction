@@ -21,6 +21,7 @@ import IconEllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import IconInfo from 'lucide-solid/icons/info'
 import IconMoveRight from 'lucide-solid/icons/move-right'
 import IconPencil from 'lucide-solid/icons/pencil'
+import IconRepeat from 'lucide-solid/icons/repeat'
 import IconTrash from 'lucide-solid/icons/trash'
 import { createSignal, For, Show, type JSX } from 'solid-js'
 import TaskCheckbox from './TaskCheckbox'
@@ -147,6 +148,9 @@ export default function TaskItem(props: TaskItemProps) {
               </span>
             </span>
           )}
+        </Show>
+        <Show when={props.task.recurrenceId}>
+          <IconRepeat size={13} class="text-gray-400 dark:text-gray-500" />
         </Show>
         <DateBadge task={props.task} overdue={overdue()} now={now} />
       </div>

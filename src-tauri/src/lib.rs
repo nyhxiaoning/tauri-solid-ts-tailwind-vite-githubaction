@@ -29,6 +29,7 @@ pub fn run() {
     }
 
     builder
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_dir = app.path().app_data_dir().map_err(|e| {
                 eprintln!("Failed to get app data dir: {}", e);

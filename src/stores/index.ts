@@ -1,5 +1,6 @@
 import { createSeedSnapshot } from '@/services/mock/seed'
 import { persistNow, registerSnapshotCollector } from '@/services/persistence'
+import { startReminderEngine } from '@/services/reminders'
 import { getRepository, type DataSnapshot } from '@/services/repository'
 import { hydrateListData, snapshotListData } from './list.store'
 import { initTheme, settingsRecord } from './settings.store'
@@ -31,7 +32,7 @@ export async function initApp(): Promise<void> {
     hydrateListData(snapshot)
     hydrateTaskData(snapshot)
     initTheme(snapshot.settings.theme)
-    // M09: startReminderEngine()
+    startReminderEngine()
   } catch (error) {
     console.error('应用初始化失败:', error)
   }

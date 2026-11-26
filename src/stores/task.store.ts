@@ -1,5 +1,6 @@
 import { genId } from '@/services/id'
 import { schedulePersist } from '@/services/persistence'
+import { nextOccurrence } from '@/services/recurrence'
 import type { DataSnapshot } from '@/services/repository'
 import type { RecurrenceRule } from '@/types/recurrence'
 import type { TaskReminder } from '@/types/reminder'
@@ -118,6 +119,13 @@ export function setTaskReminder(taskId: string, offsetMinutes: number | null): v
   schedulePersist()
 }
 
+/** 提醒检查器触发后标记已触发 */
+export function markReminderFired(id: string): void {
+  if (!reminders[id] || reminders[id].fired) return
+  setReminders(id, { fired: true, firedAt: nowIso() })
+  schedulePersist()
+}
+
 // ==================== 任务 CRUD ====================
 
 export function addTask(input: NewTaskInput): Task {
@@ -161,7 +169,62 @@ export function updateTask(
 
 function markCompleted(task: Task, now: string): void {
   setTasks(task.id, { status: 'completed', completedAt: now, updatedAt: now })
-  // M09: 重复任务在 toggleTaskComplete 中"完成即再生"
+  spawnRecurrenceInstance(task)
+}
+
+/** 完成即再生:重复任务完成时克隆下一个实例(TickTick 模型) */
+function spawnRecurrenceInstance(task: Task): void {
+  const rule = task.recurrenceId ? recurrences[task.recurrenceId] : undefined
+  if (!rule) return
+  const now = dayjs()
+  // 基准 = max(现在, 生效日期):补完成逾期任务不会再生出更早的克隆
+  let base = dayjs(task.scheduledAt ?? task.dueAt ?? now.toISOString())
+  if (base.isBefore(now)) base = now
+  const next = nextOccurrence(rule, base, now)
+
+  const id = genId()
+  const scheduled = next.toISOString()
+  // 保持原任务"计划-截止"差值;只有截止 → 截止即下一次发生
+  const due = task.dueAt
+    ? task.scheduledAt
+      ? next
+          .add(
+            dayjs(task.dueAt).diff(dayjs(task.scheduledAt), 'millisecond'),
+            'millisecond'
+          )
+          .toISOString()
+      : scheduled
+    : null
+  const clone: Task = {
+    id,
+    listId: task.listId,
+    title: task.title,
+    description: task.description,
+    status: 'active',
+    priority: task.priority,
+    scheduledAt: task.scheduledAt ? scheduled : null,
+    dueAt: due,
+    completedAt: null,
+    sortOrder: sortBaseFor(task.listId),
+    recurrenceId: task.recurrenceId,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    deletedAt: null
+  }
+  setTasks(id, clone)
+  // 子任务克隆为未完成
+  for (const sub of subtasksOf(task.id)) {
+    const subId = genId()
+    setSubtasks(id, subId, {
+      id: subId,
+      taskId: id,
+      title: sub.title,
+      completed: false,
+      sortOrder: sub.sortOrder,
+      createdAt: now.toISOString(),
+      completedAt: null
+    })
+  }
 }
 
 export function toggleTaskComplete(id: string): void {

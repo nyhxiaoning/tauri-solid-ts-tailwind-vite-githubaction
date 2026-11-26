@@ -8,10 +8,12 @@ import ReminderSelector from '@/modules/task-create/components/ReminderSelector'
 import { getList } from '@/stores/list.store'
 import {
   activeReminderOf,
+  getRecurrence,
   getTask,
   setTaskReminder,
   softDeleteTask,
-  updateTask
+  updateTask,
+  upsertRecurrence
 } from '@/stores/task.store'
 import { closeTaskDetail, detailTaskId, toast } from '@/stores/ui.store'
 import { dayjs } from '@/utils/date'
@@ -148,7 +150,20 @@ export default function TaskDetailPanel() {
                     />
                   </Row>
                   <Row label="重复">
-                    <RecurrenceSelector class="h-8 text-sm" />
+                    <RecurrenceSelector
+                      value={(() => {
+                        const rule = getRecurrence(task()!.recurrenceId)
+                        return rule
+                          ? {
+                              freq: rule.freq,
+                              interval: rule.interval,
+                              weekdays: rule.weekdays,
+                              anchorDate: rule.anchorDate
+                            }
+                          : null
+                      })()}
+                      onChange={rule => upsertRecurrence(id(), rule)}
+                    />
                   </Row>
                 </div>
 
