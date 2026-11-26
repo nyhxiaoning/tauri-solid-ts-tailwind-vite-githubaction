@@ -5,6 +5,7 @@ import { LIST_DOT_COLORS } from '@/modules/lists/components/ListNav'
 import { getList, sortedLists } from '@/stores/list.store'
 import { moveTasksToList, softDeleteTask } from '@/stores/task.store'
 import {
+  openConfirm,
   openTaskCreate,
   openTaskDetail,
   selectedIds,
@@ -24,6 +25,7 @@ import {
   isOverdue
 } from '@/utils/date'
 import type { Dayjs } from 'dayjs'
+import IconArrowLeft from 'lucide-solid/icons/arrow-left'
 import IconCalendar from 'lucide-solid/icons/calendar'
 import IconEllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import IconInfo from 'lucide-solid/icons/info'
@@ -76,6 +78,8 @@ export default function TaskItem(props: TaskItemProps) {
     label: string
     icon: JSX.Element
     danger?: boolean
+    /** 为 true 时选中后保持菜单打开(用于页内切换,如「移动到…」) */
+    keepOpen?: boolean
     onSelect: () => void
   }[] => [
     {
@@ -91,6 +95,7 @@ export default function TaskItem(props: TaskItemProps) {
     {
       label: '移动到…',
       icon: <IconMoveRight size={15} />,
+      keepOpen: true,
       onSelect: () => setMenuPage('move')
     },
     {
@@ -98,8 +103,16 @@ export default function TaskItem(props: TaskItemProps) {
       icon: <IconTrash size={15} />,
       danger: true,
       onSelect: () => {
-        softDeleteTask(props.task.id)
-        toast('success', '任务已移入回收站')
+        openConfirm({
+          title: '删除任务',
+          message: `确定将「${props.task.title}」移入回收站吗?`,
+          danger: true,
+          confirmText: '移入回收站',
+          onConfirm: () => {
+            softDeleteTask(props.task.id)
+            toast('success', '任务已移入回收站')
+          }
+        })
       }
     }
   ]
@@ -200,7 +213,7 @@ export default function TaskItem(props: TaskItemProps) {
         open={menuOpen()}
         anchor={menuBtn}
         onClose={() => setMenuOpen(false)}
-        widthClass="w-32"
+        widthClass={menuPage() === 'move' ? 'w-44' : 'w-32'}
       >
         <Show
           when={menuPage() === 'move'}
@@ -211,7 +224,7 @@ export default function TaskItem(props: TaskItemProps) {
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    setMenuOpen(false)
+                    if (!item.keepOpen) setMenuOpen(false)
                     item.onSelect()
                   }}
                   class={cn(
@@ -228,28 +241,38 @@ export default function TaskItem(props: TaskItemProps) {
             </For>
           }
         >
-          <For each={moveTargets()}>
-            {target => (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false)
-                  moveTasksToList([props.task.id], target.id)
-                  toast('success', `已移动到「${target.name}」`)
-                }}
-                class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-              >
-                <span
-                  class={cn(
-                    'h-2 w-2 shrink-0 rounded-full',
-                    LIST_DOT_COLORS[target.color]
-                  )}
-                />
-                <span class="min-w-0 truncate">{target.name}</span>
-              </button>
-            )}
-          </For>
+          <div>
+            <button
+              type="button"
+              onClick={() => setMenuPage('actions')}
+              class="flex w-full items-center gap-1.5 border-b border-gray-100 px-3 py-2 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <IconArrowLeft size={13} />
+              移动到…
+            </button>
+            <For each={moveTargets()}>
+              {target => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    moveTasksToList([props.task.id], target.id)
+                    toast('success', `已移动到「${target.name}」`)
+                  }}
+                  class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <span
+                    class={cn(
+                      'h-2 w-2 shrink-0 rounded-full',
+                      LIST_DOT_COLORS[target.color]
+                    )}
+                  />
+                  <span class="min-w-0 truncate">{target.name}</span>
+                </button>
+              )}
+            </For>
+          </div>
         </Show>
       </AnchoredMenu>
     </li>
