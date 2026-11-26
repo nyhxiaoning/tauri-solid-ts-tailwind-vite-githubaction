@@ -24,8 +24,8 @@ export interface GiteeSyncConfig {
 }
 
 const DEFAULT_CONFIG: GiteeSyncConfig = {
-  owner: '',
-  repo: '',
+  owner: 'nyhxiaoning',
+  repo: 'person_todolist',
   path: 'todo/data.json',
   branch: '',
   token: '',
@@ -39,8 +39,14 @@ export function loadGiteeConfig(): GiteeSyncConfig {
     if (!raw) return { ...DEFAULT_CONFIG }
     const parsed = JSON.parse(raw) as Partial<GiteeSyncConfig>
     return {
-      owner: typeof parsed.owner === 'string' ? parsed.owner : '',
-      repo: typeof parsed.repo === 'string' ? parsed.repo : '',
+      owner:
+        typeof parsed.owner === 'string' && parsed.owner
+          ? parsed.owner
+          : DEFAULT_CONFIG.owner,
+      repo:
+        typeof parsed.repo === 'string' && parsed.repo
+          ? parsed.repo
+          : DEFAULT_CONFIG.repo,
       path:
         typeof parsed.path === 'string' && parsed.path
           ? parsed.path

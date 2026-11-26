@@ -167,7 +167,7 @@ export default function DataManagePanel() {
             <Input
               value={owner()}
               onInput={e => setOwner(e.currentTarget.value)}
-              placeholder="例如:henryheng"
+              placeholder="例如:nyhxiaoning"
             />
           </div>
           <div>
@@ -175,7 +175,7 @@ export default function DataManagePanel() {
             <Input
               value={repo()}
               onInput={e => setRepo(e.currentTarget.value)}
-              placeholder="例如:todo-backup"
+              placeholder="例如:person_todolist"
             />
           </div>
           <div class="sm:col-span-2">
