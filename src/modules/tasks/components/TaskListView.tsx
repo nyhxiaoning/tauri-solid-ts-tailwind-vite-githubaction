@@ -1,6 +1,8 @@
 import EmptyState from '@/components/ui/EmptyState'
 import { useViewTasks } from '@/modules/tasks/hooks/useViewTasks'
+import { enterSelectionMode, selectionMode } from '@/stores/ui.store'
 import type { ViewId } from '@/types/view'
+import IconListChecks from 'lucide-solid/icons/list-checks'
 import { For, Show } from 'solid-js'
 import QuickAddTask, { type QuickAddPreset } from './QuickAddTask'
 import TaskFilterBar from './TaskFilterBar'
@@ -38,11 +40,26 @@ export default function TaskListView(props: TaskListViewProps) {
         count={result().tasks.length}
         subtitle={props.subtitle}
       />
-      <TaskFilterBar
-        filters={filters}
-        setFilters={setFilters}
-        showStatus={props.showStatusFilter}
-      />
+      <div class="mb-3 flex items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <TaskFilterBar
+            filters={filters}
+            setFilters={setFilters}
+            showStatus={props.showStatusFilter}
+          />
+        </div>
+        <Show when={!selectionMode()}>
+          <button
+            type="button"
+            onClick={enterSelectionMode}
+            class="mt-0.5 shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
+            aria-label="批量操作"
+            title="批量操作"
+          >
+            <IconListChecks size={16} />
+          </button>
+        </Show>
+      </div>
       <div class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <Show when={props.quickAdd}>
           {quickAdd => (

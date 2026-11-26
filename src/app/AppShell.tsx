@@ -5,6 +5,7 @@ import ToastContainer from '@/components/ui/ToastContainer'
 import SearchDialog from '@/modules/search/components/SearchDialog'
 import TaskCreateDialog from '@/modules/task-create/components/TaskCreateDialog'
 import TaskDetailPanel from '@/modules/task-detail/components/TaskDetailPanel'
+import BulkActionBar from '@/modules/tasks/components/BulkActionBar'
 import { openSearch } from '@/stores/ui.store'
 import { onCleanup, onMount, Suspense, type ParentProps } from 'solid-js'
 
@@ -39,6 +40,7 @@ export default function AppShell(props: ParentProps) {
       <SearchDialog />
       <ConfirmDialog />
       <ToastContainer />
+      <BulkActionBar />
     </div>
   )
 }

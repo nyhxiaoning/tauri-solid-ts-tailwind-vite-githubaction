@@ -1,9 +1,17 @@
+import Checkbox from '@/components/ui/Checkbox'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useNow } from '@/hooks/useNow'
 import { LIST_DOT_COLORS } from '@/modules/lists/components/ListNav'
 import { getList, sortedLists } from '@/stores/list.store'
 import { moveTasksToList, softDeleteTask } from '@/stores/task.store'
-import { openTaskCreate, openTaskDetail, toast } from '@/stores/ui.store'
+import {
+  openTaskCreate,
+  openTaskDetail,
+  selectedIds,
+  selectionMode,
+  toast,
+  toggleSelected
+} from '@/stores/ui.store'
 import type { Priority } from '@/types/enums'
 import type { ListColor } from '@/types/list'
 import type { Task } from '@/types/task'
@@ -57,6 +65,8 @@ export default function TaskItem(props: TaskItemProps) {
   ]
 
   const completed = () => props.task.status === 'completed'
+  const inSelectionMode = () => selectionMode()
+  const isSelected = () => selectedIds().has(props.task.id)
   const overdue = () => {
     if (completed()) return false
     const date = effectiveDate(props.task)
@@ -98,12 +108,25 @@ export default function TaskItem(props: TaskItemProps) {
   return (
     <li
       ref={setRowRef}
-      class="group relative flex items-start gap-2.5 px-3 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60"
+      class={cn(
+        'group relative flex items-start gap-2.5 px-3 py-2.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60',
+        isSelected() && 'bg-primary-50 dark:bg-primary-500/10'
+      )}
     >
-      <TaskCheckbox task={props.task} />
+      <Show when={inSelectionMode()} fallback={<TaskCheckbox task={props.task} />}>
+        <Checkbox
+          checked={isSelected()}
+          onToggle={() => toggleSelected(props.task.id)}
+          class="mt-0.5"
+        />
+      </Show>
       <div
         class="min-w-0 flex-1 cursor-pointer"
-        onClick={() => openTaskDetail(props.task.id)}
+        onClick={() =>
+          inSelectionMode()
+            ? toggleSelected(props.task.id)
+            : openTaskDetail(props.task.id)
+        }
       >
         <div class="flex items-center gap-1.5">
           <Show when={!completed() && props.task.priority !== 'none'}>
@@ -155,80 +178,82 @@ export default function TaskItem(props: TaskItemProps) {
         <DateBadge task={props.task} overdue={overdue()} now={now} />
       </div>
 
-      {/* 行操作菜单(hover 显示) */}
-      <div class="relative">
-        <button
-          type="button"
-          onClick={() => {
-            setMenuPage('actions')
-            setMenuOpen(!menuOpen())
-          }}
-          class={cn(
-            'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
-            'opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
-            menuOpen() && 'opacity-100'
-          )}
-          aria-label="更多操作"
-        >
-          <IconEllipsisVertical size={16} />
-        </button>
-        <Show when={menuOpen()}>
-          <div
-            class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
-            role="menu"
+      {/* 行操作菜单(hover 显示;多选模式下隐藏) */}
+      <Show when={!inSelectionMode()}>
+        <div class="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setMenuPage('actions')
+              setMenuOpen(!menuOpen())
+            }}
+            class={cn(
+              'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
+              'opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
+              menuOpen() && 'opacity-100'
+            )}
+            aria-label="更多操作"
           >
-            <Show
-              when={menuPage() === 'move'}
-              fallback={
-                <For each={actions()}>
-                  {item => (
+            <IconEllipsisVertical size={16} />
+          </button>
+          <Show when={menuOpen()}>
+            <div
+              class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+              role="menu"
+            >
+              <Show
+                when={menuPage() === 'move'}
+                fallback={
+                  <For each={actions()}>
+                    {item => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          item.onSelect()
+                        }}
+                        class={cn(
+                          'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                          item.danger
+                            ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
+                            : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                        )}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </button>
+                    )}
+                  </For>
+                }
+              >
+                <For each={moveTargets()}>
+                  {target => (
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => {
                         setMenuOpen(false)
-                        item.onSelect()
+                        moveTasksToList([props.task.id], target.id)
+                        toast('success', `已移动到「${target.name}」`)
                       }}
-                      class={cn(
-                        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
-                        item.danger
-                          ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
-                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
-                      )}
+                      class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
-                      {item.icon}
-                      {item.label}
+                      <span
+                        class={cn(
+                          'h-2 w-2 shrink-0 rounded-full',
+                          LIST_DOT_COLORS[target.color]
+                        )}
+                      />
+                      <span class="min-w-0 truncate">{target.name}</span>
                     </button>
                   )}
                 </For>
-              }
-            >
-              <For each={moveTargets()}>
-                {target => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      moveTasksToList([props.task.id], target.id)
-                      toast('success', `已移动到「${target.name}」`)
-                    }}
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <span
-                      class={cn(
-                        'h-2 w-2 shrink-0 rounded-full',
-                        LIST_DOT_COLORS[target.color]
-                      )}
-                    />
-                    <span class="min-w-0 truncate">{target.name}</span>
-                  </button>
-                )}
-              </For>
-            </Show>
-          </div>
-        </Show>
-      </div>
+              </Show>
+            </div>
+          </Show>
+        </div>
+      </Show>
     </li>
   )
 }
