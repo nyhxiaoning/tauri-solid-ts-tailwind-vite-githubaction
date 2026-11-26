@@ -1,8 +1,22 @@
+import { dayjs } from '@/utils/date'
+import TaskListView from '../components/TaskListView'
+
+/** 今日任务:计划/截止在今天(含逾期滚动) */
 export default function TodayPage() {
   return (
-    <section class="p-8">
-      <h1 class="text-xl font-semibold">今日任务</h1>
-      <p class="mt-2 text-sm text-gray-500">M03 将提供完整任务视图</p>
-    </section>
+    <TaskListView
+      view="today"
+      title="今日任务"
+      showListName
+      quickAdd={{
+        placeholder: '添加今天要做的事',
+        buildPreset: () => ({
+          listId: null,
+          scheduledAt: dayjs().startOf('day').toISOString()
+        })
+      }}
+      emptyTitle="今天没有任务"
+      emptyHint="快添加一件今天要做的事吧"
+    />
   )
 }

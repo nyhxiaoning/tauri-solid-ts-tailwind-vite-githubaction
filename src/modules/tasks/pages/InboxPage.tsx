@@ -1,8 +1,17 @@
+import TaskListView from '../components/TaskListView'
+
+/** 收件箱:无清单任务 */
 export default function InboxPage() {
   return (
-    <section class="p-8">
-      <h1 class="text-xl font-semibold">收件箱</h1>
-      <p class="mt-2 text-sm text-gray-500">M03 将提供完整任务视图</p>
-    </section>
+    <TaskListView
+      view="inbox"
+      title="收件箱"
+      quickAdd={{
+        placeholder: '添加任务到收件箱',
+        buildPreset: () => ({ listId: null })
+      }}
+      emptyTitle="收件箱已清空"
+      emptyHint="未归入清单的任务都会出现在这里"
+    />
   )
 }
