@@ -1,10 +1,11 @@
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useNow } from '@/hooks/useNow'
 import { LIST_DOT_COLORS } from '@/modules/lists/components/ListNav'
-import { getList } from '@/stores/list.store'
-import { softDeleteTask } from '@/stores/task.store'
+import { getList, sortedLists } from '@/stores/list.store'
+import { moveTasksToList, softDeleteTask } from '@/stores/task.store'
 import { openTaskCreate, openTaskDetail, toast } from '@/stores/ui.store'
 import type { Priority } from '@/types/enums'
+import type { ListColor } from '@/types/list'
 import type { Task } from '@/types/task'
 import { cn } from '@/utils/cn'
 import {
@@ -18,6 +19,7 @@ import type { Dayjs } from 'dayjs'
 import IconCalendar from 'lucide-solid/icons/calendar'
 import IconEllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import IconInfo from 'lucide-solid/icons/info'
+import IconMoveRight from 'lucide-solid/icons/move-right'
 import IconPencil from 'lucide-solid/icons/pencil'
 import IconTrash from 'lucide-solid/icons/trash'
 import { createSignal, For, Show, type JSX } from 'solid-js'
@@ -42,7 +44,16 @@ export default function TaskItem(props: TaskItemProps) {
   const now: () => Dayjs = useNow()
   const [rowRef, setRowRef] = createSignal<HTMLLIElement>()
   const [menuOpen, setMenuOpen] = createSignal(false)
+  const [menuPage, setMenuPage] = createSignal<'actions' | 'move'>('actions')
   useClickOutside(rowRef, () => setMenuOpen(false))
+
+  /** 移动目标:收件箱 + 其他清单 */
+  const moveTargets = (): { id: string | null; name: string; color: ListColor }[] => [
+    { id: null, name: '收件箱', color: 'gray' },
+    ...sortedLists()
+      .filter(list => list.id !== props.task.listId)
+      .map(list => ({ id: list.id, name: list.name, color: list.color }))
+  ]
 
   const completed = () => props.task.status === 'completed'
   const overdue = () => {
@@ -66,6 +77,11 @@ export default function TaskItem(props: TaskItemProps) {
       label: '编辑',
       icon: <IconPencil size={15} />,
       onSelect: () => openTaskCreate({ taskId: props.task.id })
+    },
+    {
+      label: '移动到…',
+      icon: <IconMoveRight size={15} />,
+      onSelect: () => setMenuPage('move')
     },
     {
       label: '删除',
@@ -139,7 +155,10 @@ export default function TaskItem(props: TaskItemProps) {
       <div class="relative">
         <button
           type="button"
-          onClick={() => setMenuOpen(!menuOpen())}
+          onClick={() => {
+            setMenuPage('actions')
+            setMenuOpen(!menuOpen())
+          }}
           class={cn(
             'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
             'opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
@@ -151,30 +170,58 @@ export default function TaskItem(props: TaskItemProps) {
         </button>
         <Show when={menuOpen()}>
           <div
-            class="absolute right-0 z-50 mt-1 w-28 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+            class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
             role="menu"
           >
-            <For each={actions()}>
-              {item => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    item.onSelect()
-                  }}
-                  class={cn(
-                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
-                    item.danger
-                      ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
-                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+            <Show
+              when={menuPage() === 'move'}
+              fallback={
+                <For each={actions()}>
+                  {item => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        item.onSelect()
+                      }}
+                      class={cn(
+                        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                        item.danger
+                          ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                      )}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
                   )}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              )}
-            </For>
+                </For>
+              }
+            >
+              <For each={moveTargets()}>
+                {target => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      moveTasksToList([props.task.id], target.id)
+                      toast('success', `已移动到「${target.name}」`)
+                    }}
+                    class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    <span
+                      class={cn(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        LIST_DOT_COLORS[target.color]
+                      )}
+                    />
+                    <span class="min-w-0 truncate">{target.name}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
           </div>
         </Show>
       </div>

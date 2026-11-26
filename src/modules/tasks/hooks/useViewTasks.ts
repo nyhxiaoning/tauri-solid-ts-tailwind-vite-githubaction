@@ -17,10 +17,10 @@ export interface ViewTasks {
   groups: TaskGroup[]
 }
 
-/** 视图任务数据:归属筛选 + 分组,随 store/时间/筛选自动更新 */
+/** 视图任务数据:归属筛选 + 分组,随 store/时间/筛选自动更新(view/listId 用 getter 保持响应式) */
 export function useViewTasks(
-  view: ViewId,
-  listId?: string
+  view: () => ViewId,
+  listId?: () => string | undefined
 ): {
   filters: Accessor<TaskFilters>
   setFilters: (f: TaskFilters) => void
@@ -29,8 +29,14 @@ export function useViewTasks(
   const now = useNow()
   const { filters, setFilters } = useTaskFilters()
   const result = createMemo<ViewTasks>(() => {
-    const tasks = selectTasksForView(view, listId ?? null, allTasks(), filters(), now())
-    return { tasks, groups: groupTasksForView(view, tasks, now()) }
+    const tasks = selectTasksForView(
+      view(),
+      listId?.() ?? null,
+      allTasks(),
+      filters(),
+      now()
+    )
+    return { tasks, groups: groupTasksForView(view(), tasks, now()) }
   })
   return { filters, setFilters, result }
 }

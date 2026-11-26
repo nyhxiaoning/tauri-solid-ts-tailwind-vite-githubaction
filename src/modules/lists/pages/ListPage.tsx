@@ -1,11 +1,37 @@
+import EmptyState from '@/components/ui/EmptyState'
+import TaskListView from '@/modules/tasks/components/TaskListView'
+import { getList } from '@/stores/list.store'
 import { useParams } from '@solidjs/router'
+import { createMemo, Show } from 'solid-js'
 
+/** 清单页:复用 TaskListView,按路由清单 id 归属 */
 export default function ListPage() {
-  const params = useParams<{ id: string }>()
+  const params = useParams()
+  const list = createMemo(() => getList(params.id ?? ''))
+
   return (
-    <section class="p-8">
-      <h1 class="text-xl font-semibold">清单 {params.id}</h1>
-      <p class="mt-2 text-sm text-gray-500">M03/M06 将提供完整清单视图</p>
-    </section>
+    <Show
+      when={list()}
+      fallback={
+        <div class="mx-auto max-w-3xl px-6 py-6">
+          <EmptyState title="清单不存在或已删除" />
+        </div>
+      }
+    >
+      {l => (
+        <TaskListView
+          view="list"
+          listId={l().id}
+          title={l().name}
+          showStatusFilter
+          quickAdd={{
+            placeholder: `添加任务到「${l().name}」`,
+            buildPreset: () => ({ listId: l().id })
+          }}
+          emptyTitle="清单为空"
+          emptyHint="添加第一个任务吧"
+        />
+      )}
+    </Show>
   )
 }

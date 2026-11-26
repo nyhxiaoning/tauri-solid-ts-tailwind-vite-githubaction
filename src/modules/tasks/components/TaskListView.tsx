@@ -26,7 +26,10 @@ interface TaskListViewProps {
 
 /** 六大任务视图的共用组合:标题 + 筛选 + 快速添加 + 分组/平铺列表 + 空态 */
 export default function TaskListView(props: TaskListViewProps) {
-  const { filters, setFilters, result } = useViewTasks(props.view, props.listId)
+  const { filters, setFilters, result } = useViewTasks(
+    () => props.view,
+    () => props.listId
+  )
 
   return (
     <div class="mx-auto max-w-3xl px-6 py-6">
