@@ -105,14 +105,17 @@ rustup target add aarch64-linux-android x86_64-linux-android
 
 ### 2.2 推荐脚本(package.json)
 
+本仓库已内置环境自检脚本 `scripts/check-android-env.mjs`(检查 JDK ≥ 17、ANDROID_HOME、NDK_HOME、Rust 安卓 target、gen/android 是否初始化),并作为 `dev:android` / `build:android*` 的前置自动执行——环境有问题会打印中文修复说明并阻止构建;也可手动运行 `bun run check:android`。其他项目可直接复制该脚本并同样挂入。
+
 ```json
 {
   "scripts": {
     "init:android": "tauri android init",
-    "dev:android": "tauri android dev",
-    "build:android": "tauri android build",
-    "build:android:apk": "tauri android build --apk",
-    "build:android:aab": "tauri android build --aab"
+    "check:android": "bun scripts/check-android-env.mjs",
+    "dev:android": "bun scripts/check-android-env.mjs && tauri android dev",
+    "build:android": "bun scripts/check-android-env.mjs && tauri android build",
+    "build:android:apk": "bun scripts/check-android-env.mjs && tauri android build --apk",
+    "build:android:aab": "bun scripts/check-android-env.mjs && tauri android build --aab"
   }
 }
 ```
