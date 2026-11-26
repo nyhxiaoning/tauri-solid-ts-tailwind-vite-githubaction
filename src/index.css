@@ -51,13 +51,13 @@
   }
 
   /* Android 壳(edge-to-edge WebView)顶部避让:状态栏/挖孔区不可触摸,
-     整体下移 100px(浏览器/H5 端地址栏已天然避让,不启用) */
+     整体下移 60px(浏览器/H5 端地址栏已天然避让,不启用) */
   :root {
     --edge-top: 0px;
   }
 
   html.android-edge {
-    --edge-top: 100px;
+    --edge-top: 60px;
   }
 
   ::-webkit-scrollbar {
