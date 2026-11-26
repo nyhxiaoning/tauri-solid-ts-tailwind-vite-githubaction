@@ -125,7 +125,8 @@ rustup target add aarch64-linux-android x86_64-linux-android
 ```bash
 bun run init:android        # 仅首次:生成 src-tauri/gen/android 工程,会提示补装缺失的 rust target
 bun run dev:android         # 连接真机/模拟器,热更新调试
-bun run build:android:apk   # 出 APK,直接安装到手机
+bun run build:android:apk           # 出 release APK(未签名,不能直接安装)
+bun run build:android:apk -- --debug  # 出 debug 签名 APK,可直接安装到手机调试
 bun run build:android:aab   # 出 AAB,上架 Google Play 用
 ```
 
@@ -136,6 +137,8 @@ src-tauri/target/<模式>/bundle/android/
 ├── app-universal-release.apk / app-arm64-v8a-release.apk   # apk 模式
 └── app-universal-release.aab                               # aab 模式
 ```
+
+注意:`--apk` 默认是 **release 且未签名**(文件名带 `unsigned`),Android 拒绝安装未签名包。想直接装机:加 `-- --debug`(debug 签名)或按 2.5 节配置正式签名;gradle 的原始产物在 `src-tauri/gen/android/app/build/outputs/apk/` 下,tauri 会再拷贝到上面的 bundle 目录。
 
 ### 2.4 代码侧检查清单
 
@@ -149,7 +152,7 @@ src-tauri/target/<模式>/bundle/android/
 
 ### 2.5 签名(正式分发才需要)
 
-调试构建(`tauri android build` 默认)用自动生成的 debug 签名,可直接装机。对外分发需 keystore:
+`tauri android build --apk --debug` 这类 **debug 构建**用自动生成的 debug 签名,可直接装机;默认的 release 构建未签名(文件名带 `unsigned`),需要配置 keystore 才能分发:
 
 ```bash
 keytool -genkey -v -keystore release.keystore -alias todo -keyalg RSA -keysize 2048 -validity 10000
@@ -192,6 +195,8 @@ systemProp.https.proxyPort=7890
 | Android 构建 `Unsupported class file major version` / Gradle 报 JDK 版本 | JAVA_HOME 指向了 JDK 8,切到 17+ |
 | Android 构建 `NDK not located` / `NDK_HOME` | NDK 未装或环境变量未指向 `ndk/<版本号>` 目录 |
 | `error: target is not installed` (aarch64-linux-android) | `rustup target add aarch64-linux-android` |
+| 产出 `app-universal-release-unsigned.apk`,安装到手机被拒绝 | release APK 未签名:装机调试加 `-- --debug`,分发按 2.5 节配 keystore |
+| 构建提示 `Blocking waiting for file lock` | 另一个 Gradle 构建进程持有工程锁,排队等待即可;长时间不动时 `gradlew --stop` 后重试 |
 | gradle 依赖下载失败:`Could not GET dl.google.com/...` 超时,或 `Connect to 127.0.0.1:xxxx failed: Connection refused` | Gradle 代理失效或网络不通:启动代理软件,或按 2.6 节加阿里云镜像并注释掉 `~/.gradle/gradle.properties` 里的死代理 |
 | macOS 下载后「已损坏,无法打开」 | 未签名产物被 Gatekeeper 拦:`xattr -cr <应用路径>` 或右键打开 |
 | 改了 `productName` 后找不到旧数据 | 正常:数据目录跟随 identifier/productName,老应用的数据不会自动迁移 |
