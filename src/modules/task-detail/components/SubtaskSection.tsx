@@ -7,6 +7,7 @@ import {
   toggleSubtask
 } from '@/stores/task.store'
 import { cn } from '@/utils/cn'
+import { isCommitEnter } from '@/utils/keyboard'
 import IconPlus from 'lucide-solid/icons/plus'
 import IconX from 'lucide-solid/icons/x'
 import { createSignal, For, Show } from 'solid-js'
@@ -19,8 +20,8 @@ export default function SubtaskSection(props: { taskId: string }) {
     subs().length === 0 ? 0 : Math.round((doneCount() / subs().length) * 100)
   const [newTitle, setNewTitle] = createSignal('')
 
-  const add = () => {
-    const trimmed = newTitle().trim()
+  const add = (raw: string) => {
+    const trimmed = raw.trim()
     if (!trimmed) return
     addSubtask(props.taskId, trimmed)
     setNewTitle('')
@@ -64,9 +65,10 @@ export default function SubtaskSection(props: { taskId: string }) {
           value={newTitle()}
           onInput={e => setNewTitle(e.currentTarget.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter') add()
+            // 读输入框实时值而非信号,避免输入法被中途打断后的信号/内容错位
+            if (isCommitEnter(e)) add(e.currentTarget.value)
           }}
-          onBlur={add}
+          onBlur={e => add(e.currentTarget.value)}
           placeholder="添加子任务,回车确认"
           class="h-7 w-full border-0 bg-transparent text-sm outline-none placeholder:text-gray-400 focus:underline dark:bg-transparent"
         />
@@ -104,7 +106,7 @@ function SubtaskRow(props: {
         value={draft()}
         onInput={e => setDraft(e.currentTarget.value)}
         onKeyDown={e => {
-          if (e.key === 'Enter') e.currentTarget.blur()
+          if (isCommitEnter(e)) e.currentTarget.blur()
         }}
         onBlur={commit}
         class={cn(

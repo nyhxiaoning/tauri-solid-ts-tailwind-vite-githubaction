@@ -17,6 +17,7 @@ import {
 } from '@/stores/task.store'
 import { closeTaskDetail, detailTaskId, toast } from '@/stores/ui.store'
 import { dayjs } from '@/utils/date'
+import { isCommitEnter } from '@/utils/keyboard'
 import IconX from 'lucide-solid/icons/x'
 import { createEffect, createSignal, Show, type JSX } from 'solid-js'
 import SubtaskSection from './SubtaskSection'
@@ -92,7 +93,7 @@ export default function TaskDetailPanel() {
                   value={titleDraft()}
                   onInput={e => setTitleDraft(e.currentTarget.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
+                    if (isCommitEnter(e)) e.currentTarget.blur()
                   }}
                   onBlur={commitTitle}
                   class="w-full border-0 bg-transparent text-base font-medium outline-none dark:bg-transparent"

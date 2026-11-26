@@ -5,6 +5,7 @@ import { createList, getList, updateList } from '@/stores/list.store'
 import { toast } from '@/stores/ui.store'
 import { LIST_COLORS, type ListColor } from '@/types/list'
 import { cn } from '@/utils/cn'
+import { isCommitEnter } from '@/utils/keyboard'
 import { createEffect, createSignal } from 'solid-js'
 import { LIST_DOT_COLORS } from './ListNav'
 
@@ -69,7 +70,7 @@ export default function ListFormDialog(props: ListFormDialogProps) {
             placeholder="例如:工作、读书计划"
             maxLength={30}
             onKeyDown={e => {
-              if (e.key === 'Enter') submit()
+              if (isCommitEnter(e)) submit()
             }}
           />
         </div>

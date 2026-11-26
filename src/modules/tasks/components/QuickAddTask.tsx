@@ -2,6 +2,7 @@ import Input from '@/components/ui/Input'
 import { addTask } from '@/stores/task.store'
 import { toast } from '@/stores/ui.store'
 import type { Priority } from '@/types/enums'
+import { isCommitEnter } from '@/utils/keyboard'
 import IconPlus from 'lucide-solid/icons/plus'
 import { createSignal, Show } from 'solid-js'
 
@@ -38,7 +39,7 @@ export default function QuickAddTask(props: QuickAddTaskProps) {
         value={title()}
         onInput={e => setTitle(e.currentTarget.value)}
         onKeyDown={e => {
-          if (e.key === 'Enter') submit()
+          if (isCommitEnter(e)) submit()
         }}
         placeholder={props.placeholder}
         aria-label={props.placeholder}

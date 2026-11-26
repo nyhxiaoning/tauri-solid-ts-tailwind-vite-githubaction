@@ -17,6 +17,7 @@ import {
   toast
 } from '@/stores/ui.store'
 import type { Priority } from '@/types/enums'
+import { isCommitEnter } from '@/utils/keyboard'
 import { createEffect, createSignal, Show } from 'solid-js'
 import ListSelector from './ListSelector'
 import PrioritySelector from './PrioritySelector'
@@ -109,7 +110,7 @@ export default function TaskCreateDialog() {
           value={title()}
           onInput={e => setTitle(e.currentTarget.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter') submit()
+            if (isCommitEnter(e)) submit()
           }}
           placeholder="输入任务标题(必填)"
           maxLength={200}

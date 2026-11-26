@@ -8,6 +8,7 @@ import { closeSearch, openTaskDetail, searchOpen } from '@/stores/ui.store'
 import type { Task } from '@/types/task'
 import { cn } from '@/utils/cn'
 import { effectiveDate, formatRelativeDate } from '@/utils/date'
+import { isCommitEnter } from '@/utils/keyboard'
 import IconSearch from 'lucide-solid/icons/search'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 
@@ -75,7 +76,7 @@ export default function SearchDialog() {
           value={query()}
           onInput={e => setQuery(e.currentTarget.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter') openFirst()
+            if (isCommitEnter(e)) openFirst()
           }}
           placeholder="搜索任务标题或描述…"
           autofocus
