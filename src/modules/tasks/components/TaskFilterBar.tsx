@@ -1,14 +1,8 @@
 import Select from '@/components/ui/Select'
+import { PRIORITY_LABELS } from '@/modules/task-create/components/PrioritySelector'
 import { PRIORITIES, type Priority } from '@/types/enums'
 import { defaultFilters, type TaskFilters } from '@/types/view'
-import { createMemo, Show } from 'solid-js'
-
-const PRIORITY_LABELS: Record<Priority, string> = {
-  high: '高优先级',
-  medium: '中优先级',
-  low: '低优先级',
-  none: '无优先级'
-}
+import { createMemo, For, Show } from 'solid-js'
 
 const DATE_RANGE_OPTIONS: { value: TaskFilters['dateRange']; label: string }[] = [
   { value: 'any', label: '全部日期' },
@@ -60,7 +54,9 @@ export default function TaskFilterBar(props: TaskFilterBarProps) {
         aria-label="按优先级筛选"
       >
         <option value="">全部优先级</option>
-        <ForPriorityOptions />
+        <For each={PRIORITIES}>
+          {p => <option value={p}>{PRIORITY_LABELS[p]}</option>}
+        </For>
       </Select>
       <Select
         class="h-7 w-28 text-xs"
@@ -104,15 +100,5 @@ export default function TaskFilterBar(props: TaskFilterBarProps) {
         </button>
       </Show>
     </div>
-  )
-}
-
-function ForPriorityOptions() {
-  return (
-    <>
-      {PRIORITIES.map(p => (
-        <option value={p}>{PRIORITY_LABELS[p]}</option>
-      ))}
-    </>
   )
 }

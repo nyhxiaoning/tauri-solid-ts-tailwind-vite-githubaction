@@ -3,6 +3,7 @@ import TopToolbar from '@/components/layout/TopToolbar'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import ToastContainer from '@/components/ui/ToastContainer'
 import SearchDialog from '@/modules/search/components/SearchDialog'
+import TaskCreateDialog from '@/modules/task-create/components/TaskCreateDialog'
 import TaskDetailPanel from '@/modules/task-detail/components/TaskDetailPanel'
 import { openSearch } from '@/stores/ui.store'
 import { onCleanup, onMount, Suspense, type ParentProps } from 'solid-js'
@@ -33,7 +34,7 @@ export default function AppShell(props: ParentProps) {
           </Suspense>
         </main>
       </div>
-      {/* TaskCreateDialog(M04)后续挂载 */}
+      <TaskCreateDialog />
       <TaskDetailPanel />
       <SearchDialog />
       <ConfirmDialog />
