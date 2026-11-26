@@ -212,18 +212,23 @@ function spawnRecurrenceInstance(task: Task): void {
     deletedAt: null
   }
   setTasks(id, clone)
-  // 子任务克隆为未完成
-  for (const sub of subtasksOf(task.id)) {
-    const subId = genId()
-    setSubtasks(id, subId, {
-      id: subId,
-      taskId: id,
-      title: sub.title,
-      completed: false,
-      sortOrder: sub.sortOrder,
-      createdAt: now.toISOString(),
-      completedAt: null
-    })
+  // 子任务克隆为未完成(新任务尚无子任务记录,整层替换写入,避免路径写穿透 undefined)
+  const subsToClone = subtasksOf(task.id)
+  if (subsToClone.length > 0) {
+    const cloned: Record<string, Subtask> = {}
+    for (const sub of subsToClone) {
+      const subId = genId()
+      cloned[subId] = {
+        id: subId,
+        taskId: id,
+        title: sub.title,
+        completed: false,
+        sortOrder: sub.sortOrder,
+        createdAt: now.toISOString(),
+        completedAt: null
+      }
+    }
+    setSubtasks(id, () => cloned)
   }
 }
 
@@ -316,7 +321,8 @@ export function addSubtask(taskId: string, title: string): void {
     createdAt: nowIso(),
     completedAt: null
   }
-  setSubtasks(taskId, id, subtask)
+  // 路径式 setter 不会自动创建缺失的中间层:任务首条子任务时 subtasks[taskId] 还是 undefined
+  setSubtasks(taskId, prev => ({ ...prev, [id]: subtask }))
   touch(taskId)
   schedulePersist()
 }
