@@ -35,7 +35,7 @@ export default function QuickAddTask(props: QuickAddTaskProps) {
     <div class="flex items-center gap-2 px-3 py-2.5">
       <IconPlus size={16} class="shrink-0 text-gray-400" />
       <Input
-        class="h-7 border-0 bg-transparent px-0 text-sm shadow-none focus:ring-0 dark:bg-transparent"
+        class="h-9 md:h-7 w-full border-0 bg-transparent px-0 text-sm shadow-none focus:ring-0 dark:bg-transparent"
         value={title()}
         onInput={e => setTitle(e.currentTarget.value)}
         onKeyDown={e => {

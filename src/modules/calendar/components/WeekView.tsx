@@ -22,42 +22,45 @@ export default function WeekView(props: WeekViewProps) {
   }
 
   return (
-    <div class="grid grid-cols-7 gap-2">
-      <For each={days()}>
-        {day => (
-          <div class="flex min-h-64 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-            <div
-              class={cn(
-                'flex items-baseline justify-center gap-1 border-b border-gray-100 py-1.5 dark:border-gray-800',
-                day.isSame(now(), 'day') && 'bg-primary-50 dark:bg-primary-500/10'
-              )}
-            >
-              <span class="text-xs text-gray-400">{WEEKDAY_HEADERS[day.day()]}</span>
-              <span
+    // 移动端横向滑动看整周,列宽保住 640px;桌面无影响
+    <div class="max-md:overflow-x-auto">
+      <div class="grid max-md:min-w-[640px] grid-cols-7 gap-2">
+        <For each={days()}>
+          {day => (
+            <div class="flex min-h-64 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+              <div
                 class={cn(
-                  'text-sm tabular-nums',
-                  day.isSame(now(), 'day')
-                    ? 'font-semibold text-primary-600 dark:text-primary-400'
-                    : 'text-gray-600 dark:text-gray-300'
+                  'flex items-baseline justify-center gap-1 border-b border-gray-100 py-1.5 dark:border-gray-800',
+                  day.isSame(now(), 'day') && 'bg-primary-50 dark:bg-primary-500/10'
                 )}
               >
-                {day.date()}
-              </span>
+                <span class="text-xs text-gray-400">{WEEKDAY_HEADERS[day.day()]}</span>
+                <span
+                  class={cn(
+                    'text-sm tabular-nums',
+                    day.isSame(now(), 'day')
+                      ? 'font-semibold text-primary-600 dark:text-primary-400'
+                      : 'text-gray-600 dark:text-gray-300'
+                  )}
+                >
+                  {day.date()}
+                </span>
+              </div>
+              <div
+                class="flex flex-1 cursor-pointer flex-col gap-1 p-1.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                onClick={() => props.onOpenDay(day)}
+                role="presentation"
+              >
+                <For each={props.tasksOfDay(day)}>
+                  {task => (
+                    <CalendarTaskChip task={task} onOpen={() => props.onOpenTask(task)} />
+                  )}
+                </For>
+              </div>
             </div>
-            <div
-              class="flex flex-1 cursor-pointer flex-col gap-1 p-1.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/40"
-              onClick={() => props.onOpenDay(day)}
-              role="presentation"
-            >
-              <For each={props.tasksOfDay(day)}>
-                {task => (
-                  <CalendarTaskChip task={task} onOpen={() => props.onOpenTask(task)} />
-                )}
-              </For>
-            </div>
-          </div>
-        )}
-      </For>
+          )}
+        </For>
+      </div>
     </div>
   )
 }

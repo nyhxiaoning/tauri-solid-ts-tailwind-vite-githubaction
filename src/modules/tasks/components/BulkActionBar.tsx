@@ -56,12 +56,12 @@ export default function BulkActionBar() {
 
   return (
     <Show when={selectionMode()}>
-      <div class="fixed bottom-6 left-1/2 z-60 -translate-x-1/2">
+      <div class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-60 -translate-x-1/2 md:bottom-6">
         <div
           ref={setBarRef}
-          class="relative flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-2 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
+          class="relative flex max-w-[calc(100vw-2rem)] flex-wrap justify-center items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-2 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
         >
-          <span class="px-1 text-xs text-gray-500 dark:text-gray-400">
+          <span class="whitespace-nowrap px-1 text-xs text-gray-500 dark:text-gray-400">
             已选 {count()} 项
           </span>
           <Button size="sm" variant="primary" disabled={!count()} onClick={complete}>

@@ -34,7 +34,7 @@ export default function TaskListView(props: TaskListViewProps) {
   )
 
   return (
-    <div class="mx-auto max-w-3xl px-6 py-6">
+    <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
       <TaskListHeader
         title={props.title}
         count={result().tasks.length}

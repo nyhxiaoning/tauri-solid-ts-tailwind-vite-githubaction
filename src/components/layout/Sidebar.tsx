@@ -2,7 +2,7 @@ import { useNow } from '@/hooks/useNow'
 import ListNav from '@/modules/lists/components/ListNav'
 import { selectTaskCounts } from '@/stores/task.selectors'
 import { allTasks } from '@/stores/task.store'
-import { openTaskCreate } from '@/stores/ui.store'
+import { closeNav, openTaskCreate } from '@/stores/ui.store'
 import { cn } from '@/utils/cn'
 import { A } from '@solidjs/router'
 import IconCalendarDays from 'lucide-solid/icons/calendar-days'
@@ -64,6 +64,7 @@ export default function Sidebar() {
         {item => (
           <A
             href={item.href}
+            onClick={closeNav}
             class={cn(
               'mx-2 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
               'hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -84,6 +85,7 @@ export default function Sidebar() {
       <div class="mt-auto">
         <A
           href="/settings"
+          onClick={closeNav}
           class={cn(
             'mx-2 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
             'hover:bg-gray-100 dark:hover:bg-gray-800'

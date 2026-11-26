@@ -70,7 +70,7 @@ export default function SubtaskSection(props: { taskId: string }) {
           }}
           onBlur={e => add(e.currentTarget.value)}
           placeholder="添加子任务,回车确认"
-          class="h-7 w-full border-0 bg-transparent text-sm outline-none placeholder:text-gray-400 focus:underline dark:bg-transparent"
+          class="h-9 md:h-7 w-full border-0 bg-transparent text-sm outline-none placeholder:text-gray-400 focus:underline dark:bg-transparent"
         />
       </div>
     </section>
@@ -119,7 +119,7 @@ function SubtaskRow(props: {
       <button
         type="button"
         onClick={() => deleteSubtask(props.taskId, props.subtaskId)}
-        class="rounded p-0.5 text-gray-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+        class="max-md:opacity-100 rounded p-0.5 text-gray-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
         aria-label="删除子任务"
       >
         <IconX size={13} />

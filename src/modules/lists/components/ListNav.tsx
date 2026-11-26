@@ -1,7 +1,7 @@
 import { useClickOutside } from '@/hooks/useClickOutside'
 import ListFormDialog from '@/modules/lists/components/ListFormDialog'
 import { deleteList, sortedLists } from '@/stores/list.store'
-import { openConfirm, toast } from '@/stores/ui.store'
+import { closeNav, openConfirm, toast } from '@/stores/ui.store'
 import type { ListColor } from '@/types/list'
 import { cn } from '@/utils/cn'
 import { A, useLocation, useNavigate } from '@solidjs/router'
@@ -82,6 +82,7 @@ export default function ListNav() {
           <div class="group relative mx-2 flex items-center">
             <A
               href={`/lists/${list.id}`}
+              onClick={closeNav}
               class={cn(
                 'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
                 'hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -98,7 +99,7 @@ export default function ListNav() {
               onClick={() => setOpenMenuId(openMenuId() === list.id ? null : list.id)}
               class={cn(
                 'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
-                'opacity-0 group-hover:opacity-100 dark:hover:bg-gray-800',
+                'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-800',
                 openMenuId() === list.id && 'opacity-100'
               )}
               aria-label={`清单「${list.name}」操作`}

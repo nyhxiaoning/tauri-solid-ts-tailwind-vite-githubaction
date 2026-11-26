@@ -40,10 +40,14 @@
   body,
   #root {
     height: 100%;
+    /* 移动端动态工具栏感知(桌面 dvh==100%,零影响);上一行为不支持时的回退 */
+    height: 100dvh;
   }
 
   body {
     @apply overflow-hidden bg-gray-50 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    /* 防止 WebView 环境下拉刷新/橡皮筋滚动 */
+    overscroll-behavior: none;
   }
 
   ::-webkit-scrollbar {

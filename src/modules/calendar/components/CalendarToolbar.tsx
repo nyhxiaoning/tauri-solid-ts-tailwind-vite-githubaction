@@ -39,7 +39,7 @@ export default function CalendarToolbar(props: {
   }
 
   return (
-    <div class="mb-4 flex items-center gap-3">
+    <div class="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
       <button
         type="button"
         onClick={() => props.setCursor(dayjs())}

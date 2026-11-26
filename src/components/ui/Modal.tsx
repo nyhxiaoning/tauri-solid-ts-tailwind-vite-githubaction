@@ -35,7 +35,7 @@ export default function Modal(props: ModalProps & ParentProps) {
             aria-modal="true"
             aria-label={props.title}
             class={cn(
-              'relative max-h-[85vh] w-full overflow-y-auto rounded-xl bg-white p-5 shadow-2xl dark:bg-gray-900',
+              'relative max-h-[85dvh] w-full overflow-y-auto rounded-xl bg-white p-5 shadow-2xl dark:bg-gray-900',
               props.widthClass ?? 'max-w-md'
             )}
           >

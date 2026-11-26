@@ -189,7 +189,7 @@ export default function TaskItem(props: TaskItemProps) {
             }}
             class={cn(
               'rounded p-1 text-gray-400 transition-opacity hover:bg-gray-100 hover:text-gray-600',
-              'opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
+              'max-md:opacity-100 opacity-0 group-hover:opacity-100 dark:hover:bg-gray-700',
               menuOpen() && 'opacity-100'
             )}
             aria-label="更多操作"

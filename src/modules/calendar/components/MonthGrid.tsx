@@ -20,25 +20,30 @@ export default function MonthGrid(props: MonthGridProps) {
   })
 
   return (
-    <div class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
-      <div class="grid grid-cols-7 border-b border-gray-100 bg-gray-50 text-center dark:border-gray-800 dark:bg-gray-800/50">
-        <For each={WEEKDAY_HEADERS}>
-          {w => <div class="py-1.5 text-xs font-medium text-gray-400">{w}</div>}
-        </For>
-      </div>
-      <div class="grid grid-cols-7">
-        <For each={gridDays()}>
-          {day => (
-            <DayCell
-              day={day}
-              tasks={props.tasksOfDay(day)}
-              currentMonth={day.isSame(props.cursor, 'month')}
-              maxChips={3}
-              onOpenDay={props.onOpenDay}
-              onOpenTask={props.onOpenTask}
-            />
-          )}
-        </For>
+    // 移动端横向滑动看整月;桌面容器始终 ≥640px,滚动与最小宽均不生效
+    <div class="max-md:overflow-x-auto">
+      <div class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+        <div class="max-md:min-w-[640px]">
+          <div class="grid grid-cols-7 border-b border-gray-100 bg-gray-50 text-center dark:border-gray-800 dark:bg-gray-800/50">
+            <For each={WEEKDAY_HEADERS}>
+              {w => <div class="py-1.5 text-xs font-medium text-gray-400">{w}</div>}
+            </For>
+          </div>
+          <div class="grid grid-cols-7">
+            <For each={gridDays()}>
+              {day => (
+                <DayCell
+                  day={day}
+                  tasks={props.tasksOfDay(day)}
+                  currentMonth={day.isSame(props.cursor, 'month')}
+                  maxChips={3}
+                  onOpenDay={props.onOpenDay}
+                  onOpenTask={props.onOpenTask}
+                />
+              )}
+            </For>
+          </div>
+        </div>
       </div>
     </div>
   )

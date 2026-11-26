@@ -116,11 +116,11 @@ export default function TaskCreateDialog() {
           maxLength={200}
           autofocus
         />
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid gap-3 sm:grid-cols-2">
           <ListSelector value={listId()} onChange={setListId} />
           <PrioritySelector value={priority()} onChange={setPriority} />
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid gap-3 sm:grid-cols-2">
           <DatePicker
             value={scheduledAt()}
             onChange={setScheduledAt}

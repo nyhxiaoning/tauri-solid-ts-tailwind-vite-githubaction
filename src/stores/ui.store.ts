@@ -58,6 +58,19 @@ export function closeSearch(): void {
   setSearchOpen(false)
 }
 
+// ---- 移动端导航抽屉 ----
+const [navOpen, setNavOpen] = createSignal(false)
+export { navOpen }
+export function openNav(): void {
+  setNavOpen(true)
+}
+export function closeNav(): void {
+  setNavOpen(false)
+}
+export function toggleNav(): void {
+  setNavOpen(prev => !prev)
+}
+
 // ---- 任务详情抽屉 ----
 const [detailTaskId, setDetailTaskId] = createSignal<string | null>(null)
 export { detailTaskId }
