@@ -1,5 +1,4 @@
-import dayjs from 'dayjs'
-import type { Dayjs } from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import 'dayjs/locale/zh-cn'
 
 dayjs.locale('zh-cn')
