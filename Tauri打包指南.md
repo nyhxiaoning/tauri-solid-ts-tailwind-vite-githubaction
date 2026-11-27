@@ -1,5 +1,5 @@
 # Tauri v2 打包指南(桌面 macOS / Windows + Android)
-
+注意:如果总是卡住:需要:pkill -f GradleDaemon 彻底关闭之前的服务,否则出现错误
 > 可直接复制到其他 Tauri v2 项目使用的通用指南。命令假设使用 bun,把 `bun` 换成 `npm run` / `pnpm` 同样适用。
 
 ## 0. 打包前必查:版本对齐陷阱(最常见的坑)
